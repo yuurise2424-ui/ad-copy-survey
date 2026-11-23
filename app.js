@@ -347,7 +347,7 @@ const pages = {
       h('fieldset', { class: 'q' },
         h('legend', null, '診断タイプ'),
         h('div', { class: 'type-grid' },
-          TYPES.map(([code, name]) => h('label', { class: 'type-tile', 'data-g': code[1] + code[2] },
+          TYPES.map(([code, name]) => h('label', { class: 'type-tile', 'data-g': code[1] === 'N' ? 'N' + code[2] : 'S' + code[3] },
             h('input', { type: 'radio', name: 'type', value: code, checked: state.a.type === code,
               onchange: (e) => { state.a.type = code; afterAnswer(e.target); } }),
             h('span', null, h('b', null, code), h('small', null, name))))),

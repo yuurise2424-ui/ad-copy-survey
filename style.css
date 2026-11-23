@@ -14,10 +14,6 @@
   --gray: #c3c6d4;
   --shadow: 0 10px 30px rgba(40, 50, 110, .08);
   --shadow-pop: 0 14px 34px rgba(77, 107, 254, .28);
-  --c-ST: #4d6bfe;
-  --c-SF: #ff8a5b;
-  --c-NT: #8b6cff;
-  --c-NF: #1fc8a0;
   color-scheme: light;
 }
 
@@ -231,11 +227,13 @@ legend { font-weight: 900; margin-bottom: 10px; padding: 0; font-size: 16px; }
 .type-tile b { font-size: 15px; font-weight: 900; letter-spacing: .03em; }
 .type-tile small { font-size: 11px; color: var(--muted); font-weight: 700; }
 .type-tile input:checked + span { color: #fff; transform: scale(1.06); animation: pop .3s; }
-.type-tile input:checked + span small { color: rgba(255, 255, 255, .9); }
-.type-tile[data-g="ST"] input:checked + span { background: var(--c-ST); }
-.type-tile[data-g="SF"] input:checked + span { background: var(--c-SF); }
-.type-tile[data-g="NT"] input:checked + span { background: var(--c-NT); }
-.type-tile[data-g="NF"] input:checked + span { background: var(--c-NF); }
+.type-tile input:checked + span small { color: #fff; }
+/* 4グループの色（横1行が1色）: NT 紫、NF 緑、SJ 青、SP 黄 */
+.type-tile[data-g="NT"] input:checked + span { background: #7a55b5; }
+.type-tile[data-g="NF"] input:checked + span { background: #1a7a50; }
+.type-tile[data-g="SJ"] input:checked + span { background: #22709d; }
+.type-tile[data-g="SP"] input:checked + span, .type-tile[data-g="SP"] input:checked + span small { color: #3a2c00; }
+.type-tile[data-g="SP"] input:checked + span { background: #f0c040; }
 .type-tile input:focus-visible + span { outline: 3px solid var(--blue); outline-offset: 2px; }
 .unknown-chip { margin-top: 10px; }
 .axes { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
