@@ -551,6 +551,8 @@ function showLoading() {
  * 二元配置の平方和: SS_copy = 4Σ(コピー平均-全体平均)^2、SS_scene = 4Σ(場面平均-全体平均)^2、
  * SS_int = Σ(評価-コピー平均-場面平均+全体平均)^2。
  * タイプ向けコピーとその他3つの差 d の対比平方和は 3d^2（SS_copy の一部）。
+ * 平方和のままだと自由度の多い「状況」が大きく出るため、それぞれ自由度で割ってから比べる（2026-11-24修正）。
+ *   性格 1、好み 2（タイプ向けの差が0以下またはタイプ不明なら、コピー差すべてを好みとして 3）、状況 3+9=12。
  * 商品どうしの平均の差（どちらの商品をより買いたいか）は割合に含めない。
  */
 const mean = (xs) => xs.reduce((a, b) => a + b, 0) / xs.length;
@@ -565,29 +567,33 @@ function decompose(pKey, myCopy) {
   const ssScene = 4 * sceneMeans.reduce((a, x) => a + (x - m) ** 2, 0);
   let ssInt = 0;
   r.forEach((row, i) => row.forEach((x, j) => { ssInt += (x - copyMeans[i] - sceneMeans[j] + m) ** 2; }));
-  let ssPerson = 0;
+  let msPerson = 0;
+  let msPref = ssCopy / 3;
   if (myCopy) {
     const k = COPY_IDS.indexOf(myCopy);
     const d = copyMeans[k] - mean(copyMeans.filter((_, i) => i !== k));
-    if (d > 0) ssPerson = 3 * d * d;
+    if (d > 0) {
+      msPerson = 3 * d * d;
+      msPref = Math.max(0, ssCopy - msPerson) / 2;
+    }
   }
-  return { ssPerson, ssPref: Math.max(0, ssCopy - ssPerson), ssSitu: ssScene + ssInt, copyMeans, sceneMeans };
+  return { msPerson, msPref, msSitu: (ssScene + ssInt) / 12, copyMeans, sceneMeans };
 }
 
 function computeResult() {
   const code = state.a.type;
   const myCopy = code && code !== 'unknown' ? code[1] + code[2] : null;
   const per = {};
-  let ssPerson = 0; let ssPref = 0; let ssSitu = 0;
+  let msPerson = 0; let msPref = 0; let msSitu = 0;
   productOrder.forEach((p) => {
     per[p] = decompose(p, myCopy);
-    ssPerson += per[p].ssPerson; ssPref += per[p].ssPref; ssSitu += per[p].ssSitu;
+    msPerson += per[p].msPerson; msPref += per[p].msPref; msSitu += per[p].msSitu;
   });
-  const total = ssPerson + ssPref + ssSitu;
+  const total = msPerson + msPref + msSitu;
   let person = 0; let pref = 0; let situ = 0;
   if (total > 1e-9) {
-    person = Math.round((ssPerson / total) * 100);
-    situ = Math.round((ssSitu / total) * 100);
+    person = Math.round((msPerson / total) * 100);
+    situ = Math.min(100 - person, Math.round((msSitu / total) * 100)); // 端数で合計が100を超えないようにする
     pref = 100 - person - situ;
   }
   const sceneKeys = ORDERS.A;
@@ -606,7 +612,10 @@ function resultTitle(res) {
 function resultComment(res) {
   if (res.total <= 1e-9) return 'すべてのコピー・場面に同じ点数を付けていたため、割合は計算できませんでした。';
   const top = Math.max(res.person, res.pref, res.situ);
-  if (top === res.person) return '4場面を平均すると、あなたのタイプに向けて作ったコピーを、ほかのコピーより高く評価していました。';
+  if (top === res.person) {
+    const names = productOrder.filter((p) => res.per[p].msPerson > 0).map((p) => PRODUCTS[p].name).join('と');
+    return (productOrder.length > 1 ? names + 'では、' : '') + '4場面を平均すると、あなたのタイプに向けて作ったコピーを、ほかのコピーの平均より高く評価していました。';
+  }
   if (top === res.situ) return '同じコピーでも、時間がない・疲れている・友達といる、といった場面によって、付けた点数が動いていました。';
   if (!res.myCopy) return '場面が変わっても、コピーの好みがはっきりしていました。';
   return '場面が変わっても、コピーの好みがはっきりしていました。その好みの多くは、想定したタイプの違いだけでは説明できないものでした。';
@@ -702,7 +711,7 @@ function showResult() {
 
     h('section', { class: 'card page' },
       h('h3', null, 'この結果について'),
-      h('p', { class: 'muted small' }, 'この割合は、あなたが付けた' + nRatings() + '個の点数のばらつきを、' + (multi ? '商品ごとに' : '') + '「タイプ向けコピーを一貫して高く評価した分（性格）」「タイプとは関係なく一貫した好み（自分の好み）」「場面によって変わった分（状況）」に分けたものです。1人分の回答から出したお楽しみの結果で、卒業論文では回答者全体の傾向を分析します。'),
+      h('p', { class: 'muted small' }, 'この割合は、あなたが付けた' + nRatings() + '個の点数のばらつきを、' + (multi ? '商品ごとに' : '') + '「タイプ向けコピーを一貫して高く評価した分（性格）」「タイプとは関係なく一貫した好み（自分の好み）」「場面によって変わった分（状況）」に分け、それぞれの質問数などの違いをそろえて比べたものです。1人分の回答から出したお楽しみの結果で、卒業論文では回答者全体の傾向を分析します。'),
       h('p', { class: 'muted small' }, '回答は1人1回でお願いします。全体の結果は、集計後に公開する予定です。')),
   );
   window.scrollTo(0, 0);
