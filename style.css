@@ -321,3 +321,9 @@ h2 { word-break: keep-all; overflow-wrap: anywhere; }
 .img-row .product-img:not(:only-child) { width: 48%; margin: 8px 0; }
 .product-img { aspect-ratio: 1; object-fit: cover; }
 .bars-block + .bars-block { margin-top: 22px; }
+
+/* 全員の平均 */
+.compare-row { margin-bottom: 14px; }
+.compare-label { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 0 12px; font-size: 14px; }
+.compare-label span { color: var(--muted); }
+.compare-row .split { margin: 4px 0 0; }

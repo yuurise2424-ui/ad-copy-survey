@@ -260,16 +260,16 @@ const pages = {
         h('p', null, productOrder.length > 1
           ? '卒業論文の調査にご協力ください。2つの商品について、それぞれ4つの場面を想像して、広告コピーへの印象に答えていただきます。'
           : '卒業論文の調査にご協力ください。4つの場面を想像して、広告コピーへの印象に答えていただきます。'),
-        h('p', null, '回答のお礼に、最後にあなたの反応が「性格どおり」だったか「状況しだい」だったかの結果をお見せします。'),
+        h('p', null, '回答のお礼に、最後に、あなたの反応が「性格どおり」だったか「状況しだい」だったかの分析結果をお見せします。'),
         h('div', { class: 'chips-row' },
           h('span', { class: 'chip-info' }, '所要時間 約' + SET.minutes + '分'),
           h('span', { class: 'chip-info' }, '匿名・氏名やメール不要'),
-          h('span', { class: 'chip-info' }, '回答後に結果を表示'))),
+          h('span', { class: 'chip-info' }, '回答後に分析結果を表示'))),
       h('div', { class: 'card' },
         h('h3', null, 'はじめる前に'),
         h('p', { class: 'small' }, 'このアンケートは、' + UNIVERSITY + 'の卒業論文のための調査です。16Personalitiesの診断結果と、買い物や広告の感じ方について聞きます。対象は18歳以上の方です。'),
         h('p', { class: 'small' }, '16Personalitiesは、一般に「MBTI診断」と呼ばれることの多い無料の性格診断です（建築家、仲介者などのタイプが出るものです）。正式なMBTIとは別のものです。'),
-        h('p', { class: 'small' }, '所要時間は約' + SET.minutes + '分です（16Personalitiesの診断を今から受ける場合は約' + SET.minutesWithTest + '分）。回答は匿名で、氏名やメールアドレスは集めません。結果は統計的に処理し、卒業論文にのみ使用します。'),
+        h('p', { class: 'small' }, '所要時間は約' + SET.minutes + '分です（16Personalitiesの診断を今から受ける場合は約' + SET.minutesWithTest + '分）。回答は匿名で、氏名やメールアドレスは集めません。回答は統計的に処理し、卒業論文に使用します。また、全員の平均の割合と人数だけを、回答した方の結果ページに表示します（1人ずつの回答は表示しません）。'),
         h('p', { class: 'small' }, '回答は任意で、途中でやめても不利益はありません。送信後は匿名のため、個別の削除ができません。'),
         h('p', { class: 'small muted' }, '問い合わせ先：' + AUTHOR + '（' + CONTACT + '）')),
     ],
@@ -388,7 +388,7 @@ const pages = {
         rows.map(([key, label]) => scaleQuestion('belief-' + key, label, state.a.belief[key],
           (n) => { state.a.belief[key] = n; }, '1：全く当てはまらない', '7：とても当てはまる')),
       ],
-      nextLabel: '送信して結果を見る',
+      nextLabel: '送信して分析結果を見る',
       validate: () => (rows.every(([key]) => state.a.belief[key]) ? null : 'すべての行に答えてください。'),
     };
   },
@@ -605,11 +605,11 @@ function computeResult() {
 }
 
 function resultTitle(res) {
-  if (res.total <= 1e-9) return 'どんな場面でも同じ評価タイプ';
+  if (res.total <= 1e-9) return 'どの場面でも同じ評価でした';
   const top = Math.max(res.person, res.pref, res.situ);
-  if (top === res.person) return '性格に忠実タイプ';
-  if (top === res.situ) return '状況に左右されるタイプ';
-  return 'わが道を行く「自分の好み」タイプ';
+  if (top === res.person) return '性格どおりの反応が、いちばん大きく出ました';
+  if (top === res.situ) return '状況による変化が、いちばん大きく出ました';
+  return '自分の好みが、いちばん大きく出ました';
 }
 
 function resultComment(res) {
@@ -636,9 +636,53 @@ function countUp(el, target) {
   requestAnimationFrame(tick);
 }
 
+// 公開されている平均の割合と人数だけを取得する。10人未満なら null
+async function fetchAverage() {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 6000);
+  try {
+    const res = await fetch(SUPABASE_URL + '/rest/v1/survey_averages?select=n,person,pref,situ&product_set=eq.' + setKey,
+      { headers: { 'apikey': SUPABASE_KEY }, signal: ctrl.signal, cache: 'no-store' });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    return (await res.json())[0] || null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function compareRow(label, v) {
+  const segs = [['seg-person', v.person], ['seg-pref', v.pref], ['seg-situ', v.situ]].map(([cls, w]) => {
+    const seg = h('div', { class: cls });
+    seg.style.width = w + '%';
+    return seg;
+  });
+  return h('div', { class: 'compare-row' },
+    h('div', { class: 'compare-label' }, h('b', null, label),
+      h('span', null, '性格 ' + v.person + '%　好み ' + v.pref + '%　状況 ' + v.situ + '%')),
+    h('div', { class: 'split', 'aria-hidden': 'true' }, segs));
+}
+
+async function fillAverage(box, res) {
+  let avg;
+  try {
+    avg = await fetchAverage();
+  } catch (e) {
+    box.replaceChildren(h('p', { class: 'muted' }, '平均を読み込めませんでした。あなたの回答は送信済みです。'));
+    return;
+  }
+  if (!avg) {
+    box.replaceChildren(h('p', { class: 'muted' }, '集計中です。10人分の回答が集まると表示されます。'));
+    return;
+  }
+  box.replaceChildren(
+    res.total > 1e-9 ? compareRow('あなた', res) : '',
+    compareRow('全員の平均（' + avg.n + '人）', avg),
+    h('p', { class: 'muted small' }, '平均は10人ごとに更新するため、あなたの回答はまだ含まれていないことがあります。表示しているのは平均の割合と人数だけで、1人ずつの回答が、ほかの回答者に表示されることはありません。タイプが分からない方や、確認の質問を2つとも間違えた方などは除いています。集計の途中の数字です。'));
+}
+
 function showResult() {
   bar.style.width = '100%';
-  stepLabel.textContent = '結果';
+  stepLabel.textContent = '分析結果';
   const res = computeResult();
   const typeName = TYPES.find(([c]) => c === state.a.type);
   const multi = productOrder.length > 1;
@@ -687,9 +731,11 @@ function showResult() {
           isMine ? h('span', { class: 'mine-label' }, 'あなた（' + id + '）') : null);
       }))))));
 
+  const averageBox = h('div', { 'aria-live': 'polite' }, h('p', { class: 'muted' }, '読み込み中…'));
+
   app.replaceChildren(
     h('section', { class: 'card page result-hero' },
-      h('span', { class: 'eyebrow' }, 'あなたの結果'),
+      h('span', { class: 'eyebrow' }, 'あなたの回答の分析結果'),
       h('div', { class: 'result-type grad' }, resultTitle(res)),
       typeName ? h('span', { class: 'type-badge' }, typeName[0] + '（' + typeName[1] + '）') : null,
       h('div', { class: 'big-pct' },
@@ -701,7 +747,11 @@ function showResult() {
         h('span', null, h('i', { class: 'seg-pref' }), '自分の好み ' + res.pref + '%'),
         h('span', null, h('i', { class: 'seg-situ' }), '状況しだい ' + res.situ + '%')),
       h('p', { class: 'comment' }, resultComment(res)),
-      !res.myCopy ? h('p', { class: 'muted small' }, 'タイプが分からなかったため、性格どおりかどうかは判定していません。') : null),
+      !res.myCopy ? h('p', { class: 'muted small' }, 'タイプが分からなかったため、性格どおりかどうかは分析していません。') : null),
+
+    h('section', { class: 'card page' },
+      h('h2', null, '全員の平均とくらべる'),
+      averageBox),
 
     h('section', { class: 'card page' },
       h('h2', null, 'コピーごとの「買いたい」度'),
@@ -719,10 +769,11 @@ function showResult() {
 
     h('section', { class: 'card page' },
       h('h3', null, 'この結果について'),
-      h('p', { class: 'muted small' }, 'この割合は、あなたが付けた' + nRatings() + '個の点数のばらつきを、' + (multi ? '商品ごとに' : '') + '「タイプ向けコピーを一貫して高く評価した分（性格）」「タイプとは関係なく一貫した好み（自分の好み）」「場面によって変わった分（状況）」に分け、それぞれの質問数などの違いをそろえて比べたものです。1人分の回答から出したお楽しみの結果で、卒業論文では回答者全体の傾向を分析します。'),
+      h('p', { class: 'muted small' }, 'この割合は、あなたが付けた' + nRatings() + '個の点数のばらつきを、' + (multi ? '商品ごとに' : '') + '「タイプ向けコピーを一貫して高く評価した分（性格）」「タイプとは関係なく一貫した好み（自分の好み）」「場面によって変わった分（状況）」に分け、それぞれの質問数などの違いをそろえて比べたものです。性格を診断するものではなく、今回の回答を分析した結果です。1人分の回答なので、目安としてご覧ください。卒業論文では回答者全体の傾向を別に分析します。'),
       h('p', { class: 'muted small' }, '回答は1人1回でお願いします。全体の結果は、集計後に公開する予定です。')),
   );
   window.scrollTo(0, 0);
+  fillAverage(averageBox, res);
 
   requestAnimationFrame(() => requestAnimationFrame(() => {
     segs.forEach((s) => { s.style.width = s.dataset.w + '%'; });
