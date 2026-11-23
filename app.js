@@ -1,46 +1,97 @@
 'use strict';
 
 /*
- * 卒論アンケートサイト（ワイヤレスイヤホン1商品版、2026-11-24）
+ * 卒論アンケートサイト（2026-11-24）
  * 質問の文言・順序・確認の行は create_form.gs（2026-11-15版）に合わせている。
- * 違い: 場面順のA/Bは生まれ月ではなくランダムに割り当てる。最後に結果と答え合わせを出す。
+ * 違い: 場面順のA/Bは生まれ月ではなくランダムに割り当てる。最後に結果とコピーの説明を出す。
  * 回答は Supabase の responses テーブルに送る（書き込み専用。ブラウザからは読めない）。
- * 2026-11-24 見た目を白ベースの診断サイト風に変更（保存するデータの形は web-1 のまま）。
+ *
+ * 商品の組み合わせは URL で切り替える:
+ *   （なし）      … ワイヤレスイヤホンのみ
+ *   ?p=both       … ドリンクとワイヤレスイヤホン（商品の順はランダム）
+ * 保存形式 web-2: ratings[商品][場面][コピーID]、interest[商品]。
  */
 
 const SUPABASE_URL = 'https://ljsotmcpaqdlvmysvnsj.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_fN0wj547S7tuJyVvwKlcEg_3s1q4kyf';
-const VERSION = 'web-1';
+const VERSION = 'web-2';
 
 const UNIVERSITY = '名城大学';
 const AUTHOR = '西垣優';
 const CONTACT = 'yuurise2424@gmail.com';
 const TEST_URL = 'https://www.16personalities.com/ja/%E6%80%A7%E6%A0%BC%E8%A8%BA%E6%96%AD%E3%83%86%E3%82%B9%E3%83%88';
-const IMG = 'earphone.webp';
-const IMG_ALT = 'マットブラックのワイヤレスイヤホンと充電ケースの商品画像';
 
-const COPIES = [
-  { id: 'ST', text: '連続30時間再生、重さ4.5g', target: 'S（感覚型）× T（思考型）',
+// コピーの狙い（2商品で仕組みをそろえている）
+const DESIGN = {
+  ST: { target: 'S（感覚型）× T（思考型）',
     why: '感覚型は目の前の具体的な事実を、思考型は数字で比べられる根拠を重く見る、という想定です。気持ちには触れず、数字で機能だけを伝えています。' },
-  { id: 'SF', text: '移動時間が、好きな時間になる', target: 'S（感覚型）× F（感情型）',
-    why: '感覚型に合う「通学・通勤」という見慣れた場面と、感情型に合う「好き」という気持ちを組み合わせています。落ち着いた心地よさを伝えるコピーです。' },
-  { id: 'NT', text: '音の常識を、技術で変える', target: 'N（直観型）× T（思考型）',
-    why: '直観型は新しさや可能性に、思考型は理屈や根拠に反応する、という想定です。「常識を変える」で新しさを、「技術で」で根拠を示し、数字はあえて入れていません。' },
-  { id: 'NF', text: '再生した瞬間、物語が始まる', target: 'N（直観型）× F（感情型）',
-    why: '直観型に合う想像の広がりと、感情型に合うわくわく感を組み合わせています。使った瞬間に何かが始まる期待を伝えるコピーです。' },
-];
+  SF: { target: 'S（感覚型）× F（感情型）',
+    why: '感覚型に合う身近な日常の場面と、感情型に合う落ち着いた気持ちを組み合わせています。' },
+  NT: { target: 'N（直観型）× T（思考型）',
+    why: '直観型は新しさや可能性に、思考型は理屈や根拠に反応する、という想定です。「常識を変える」で新しさを、「科学で」「技術で」で根拠を示し、数字はあえて入れていません。' },
+  NF: { target: 'N（直観型）× F（感情型）',
+    why: '直観型に合う想像の広がりと、感情型に合うわくわく感を組み合わせています。使う動作をきっかけに何かが始まる期待を伝えるコピーです。' },
+};
+const COPY_IDS = ['ST', 'SF', 'NT', 'NF'];
 const CHECK_ROW = { id: 'CHECK', text: '確認のため、この行は「5」を選んでください' };
 
-const SCENES = {
-  base: { label: '時間に余裕があるとき', text: '一人で来ていて、時間には余裕があります。体調も普段通りです。' },
-  rush: { label: '時間がないとき', text: '一人で来ていて、この後予定があり、売り場にいられるのはあと5分です。体調は普段通りです。' },
-  friend: { label: '友達と一緒のとき', text: '友達と一緒に来ていて、時間には余裕があります。体調も普段通りです。' },
-  tired: { label: 'とても疲れているとき', text: '一人で来ていて、時間には余裕があります。仕事やバイト、授業の帰りで、とても疲れています。' },
+const SCENE_LABELS = {
+  base: '時間に余裕があるとき',
+  rush: '時間がないとき',
+  friend: '友達と一緒のとき',
+  tired: 'とても疲れているとき',
 };
 const ORDERS = { A: ['base', 'rush', 'friend', 'tired'], B: ['tired', 'friend', 'rush', 'base'] };
 
-const INTRO = '次の場面を想像してください。今使っているイヤホンが壊れ、新しいものを買うつもりで家電量販店に来ました。お金は十分にあるので、値段は気にしなくて大丈夫です。売り場に、新作のワイヤレスイヤホン（下の画像）が並んでいて、下のいずれかのコピーが書かれています。それぞれを見たとき、このイヤホンを買いたいと思いますか。';
-const LEAD_NEXT = '買うつもりで来ていること、お金は十分にあること、商品（ワイヤレスイヤホン）、コピーは同じです。次の場面について答えてください。';
+const PRODUCTS = {
+  drink: {
+    name: 'ドリンク',
+    noun: 'このドリンク',
+    img: 'drink.webp',
+    imgAlt: '淡い黄色のペットボトル飲料の商品画像',
+    interestLabel: '飲み物の新商品',
+    intro: '次の場面を想像してください。飲み物を1本買うつもりで、コンビニに入りました。お金は十分にあるので、値段は気にしなくて大丈夫です。飲み物の棚に、新作のドリンク（下の画像）が並んでいて、下のいずれかのコピーが書かれています。それぞれを見たとき、このドリンクを買いたいと思いますか。',
+    copies: {
+      ST: 'ビタミンC 1000mg、糖質ゼロ',
+      SF: '忙しい合間に、ほっとひと息',
+      NT: '水分補給の常識を、科学で変える',
+      NF: 'キャップを開けたら、何かが始まる',
+    },
+    scenes: {
+      base: '一人で来ていて、時間には余裕があります。体調も普段通りです。',
+      rush: '一人で来ていて、電車の発車まであと3分です。体調は普段通りです。',
+      friend: '友達と一緒に来ていて、時間には余裕があります。体調も普段通りです。',
+      tired: '一人で来ていて、時間には余裕があります。仕事やバイト、授業の帰りで、とても疲れています。',
+    },
+  },
+  earphone: {
+    name: 'ワイヤレスイヤホン',
+    noun: 'このイヤホン',
+    img: 'earphone.webp',
+    imgAlt: 'マットブラックのワイヤレスイヤホンと充電ケースの商品画像',
+    interestLabel: 'ワイヤレスイヤホン',
+    intro: '次の場面を想像してください。今使っているイヤホンが壊れ、新しいものを買うつもりで家電量販店に来ました。お金は十分にあるので、値段は気にしなくて大丈夫です。売り場に、新作のワイヤレスイヤホン（下の画像）が並んでいて、下のいずれかのコピーが書かれています。それぞれを見たとき、このイヤホンを買いたいと思いますか。',
+    copies: {
+      ST: '連続30時間再生、重さ4.5g',
+      SF: '移動時間が、好きな時間になる',
+      NT: '音の常識を、技術で変える',
+      NF: '再生した瞬間、物語が始まる',
+    },
+    scenes: {
+      base: '一人で来ていて、時間には余裕があります。体調も普段通りです。',
+      rush: '一人で来ていて、この後予定があり、売り場にいられるのはあと5分です。体調は普段通りです。',
+      friend: '友達と一緒に来ていて、時間には余裕があります。体調も普段通りです。',
+      tired: '一人で来ていて、時間には余裕があります。仕事やバイト、授業の帰りで、とても疲れています。',
+    },
+  },
+};
+// 確認の行（「5」）を入れる商品。2場面目に入れる
+const CHECK_PRODUCT = 'earphone';
+
+const SETS = {
+  earphone: { products: ['earphone'], minutes: 5, minutesWithTest: 15 },
+  both: { products: ['drink', 'earphone'], minutes: 8, minutesWithTest: 18 },
+};
 
 const TYPES = [
   ['INTJ', '建築家'], ['INTP', '論理学者'], ['ENTJ', '指揮官'], ['ENTP', '討論者'],
@@ -80,20 +131,30 @@ const PAGE_TITLES = {
 
 // ---------- state ----------
 
+const setKey = new URLSearchParams(location.search).get('p') === 'both' ? 'both' : 'earphone';
+const SET = SETS[setKey];
+const productOrder = SET.products.length > 1 && Math.random() < 0.5
+  ? SET.products.slice().reverse() : SET.products.slice();
+
 const state = {
   order: Math.random() < 0.5 ? 'A' : 'B',
-  a: { ratings: {}, rowOrder: {}, belief: {}, axes: {} },
+  a: { ratings: {}, rowOrder: {}, interest: {}, belief: {}, axes: {} },
   step: 0,
   timings: {},
   stepStartedAt: Date.now(),
   startedAt: new Date().toISOString(),
   submitted: false,
 };
+productOrder.forEach((p) => { state.a.ratings[p] = {}; state.a.rowOrder[p] = {}; });
+
+const nRatings = () => productOrder.length * 16;
 
 function steps() {
   const list = ['consent', 'experience'];
   if (state.a.experience === 'retake' || state.a.experience === 'new') list.push('guide');
-  list.push('profile', 'adIntro', 'scene0', 'scene1', 'scene2', 'scene3', 'interest', 'mbti', 'belief');
+  list.push('profile', 'adIntro');
+  productOrder.forEach((p, pi) => { for (let s = 0; s < 4; s++) list.push('scene:' + pi + ':' + s); });
+  list.push('interest', 'mbti', 'belief');
   return list;
 }
 
@@ -176,6 +237,13 @@ function rotate(items, offset) {
   return items.slice(offset).concat(items.slice(0, offset));
 }
 
+function productImages(cls) {
+  return h('div', { class: 'img-row' },
+    productOrder.map((p) => h('img', { class: cls, src: PRODUCTS[p].img, alt: PRODUCTS[p].imgAlt })));
+}
+
+const productNames = () => productOrder.map((p) => PRODUCTS[p].name).join('と');
+
 // ---------- pages ----------
 
 const pages = {
@@ -185,18 +253,20 @@ const pages = {
       h('div', { class: 'hero' },
         h('span', { class: 'eyebrow' }, 'ご協力のお願い'),
         h('h1', null, '16Personalitiesと', h('br'), h('span', { class: 'grad' }, '購買に関するアンケート')),
-        h('img', { class: 'hero-img', src: IMG, alt: '' }),
-        h('p', null, '卒業論文の調査にご協力ください。4つの場面を想像して、広告コピーへの印象に答えていただきます。'),
+        productImages('hero-img'),
+        h('p', null, productOrder.length > 1
+          ? '卒業論文の調査にご協力ください。2つの商品について、それぞれ4つの場面を想像して、広告コピーへの印象に答えていただきます。'
+          : '卒業論文の調査にご協力ください。4つの場面を想像して、広告コピーへの印象に答えていただきます。'),
         h('p', null, '回答のお礼に、最後にあなたの反応が「性格どおり」だったか「状況しだい」だったかの結果をお見せします。'),
         h('div', { class: 'chips-row' },
-          h('span', { class: 'chip-info' }, '所要時間 約5分'),
+          h('span', { class: 'chip-info' }, '所要時間 約' + SET.minutes + '分'),
           h('span', { class: 'chip-info' }, '匿名・氏名やメール不要'),
           h('span', { class: 'chip-info' }, '回答後に結果を表示'))),
       h('div', { class: 'card' },
         h('h3', null, 'はじめる前に'),
         h('p', { class: 'small' }, 'このアンケートは、' + UNIVERSITY + 'の卒業論文のための調査です。16Personalitiesの診断結果と、買い物や広告の感じ方について聞きます。対象は18歳以上の方です。'),
         h('p', { class: 'small' }, '16Personalitiesは、一般に「MBTI診断」と呼ばれることの多い無料の性格診断です（建築家、仲介者などのタイプが出るものです）。正式なMBTIとは別のものです。'),
-        h('p', { class: 'small' }, '所要時間は約5分です（16Personalitiesの診断を今から受ける場合は約15分）。回答は匿名で、氏名やメールアドレスは集めません。結果は統計的に処理し、卒業論文にのみ使用します。'),
+        h('p', { class: 'small' }, '所要時間は約' + SET.minutes + '分です（16Personalitiesの診断を今から受ける場合は約' + SET.minutesWithTest + '分）。回答は匿名で、氏名やメールアドレスは集めません。結果は統計的に処理し、卒業論文にのみ使用します。'),
         h('p', { class: 'small' }, '回答は任意で、途中でやめても不利益はありません。送信後は匿名のため、個別の削除ができません。'),
         h('p', { class: 'small muted' }, '問い合わせ先：' + AUTHOR + '（' + CONTACT + '）')),
     ],
@@ -245,10 +315,12 @@ const pages = {
   adIntro: () => ({
     body: [
       h('h2', null, 'これからの質問について'),
-      h('p', null, 'これから、ワイヤレスイヤホンについてお聞きします。'),
-      h('p', null, '4つの場面を想像していただき、場面ごとでの広告コピーについての印象をお答えください。どの場面でも、買うつもりで来ていて、お金は十分にあることを前提にお答えください。'),
-      h('img', { class: 'product-img', src: IMG, alt: IMG_ALT }),
-      h('p', null, h('b', null, '4つのコピーは、すべてこの同じ1つのイヤホンに付いているものです。')),
+      h('p', null, 'これから、' + productNames() + 'についてお聞きします。'),
+      h('p', null, (productOrder.length > 1 ? '商品ごとに' : '') + '4つの場面を想像していただき、場面ごとでの広告コピーについての印象をお答えください。どの場面でも、買うつもりで来ていて、お金は十分にあることを前提にお答えください。'),
+      productImages('product-img'),
+      h('p', null, h('b', null, productOrder.length > 1
+        ? '商品ごとの4つのコピーは、すべてその同じ1つの商品に付いているものです。'
+        : '4つのコピーは、すべてこの同じ1つの商品に付いているものです。')),
       h('p', null, '各ページでは、まず【今回の状況】を読んでから、コピーへの回答を選んでください。'),
     ],
     nextLabel: '1つめの場面へ →',
@@ -258,10 +330,11 @@ const pages = {
   interest: () => ({
     body: [
       h('h2', null, 'おつかれさま！あと少しです'),
-      scaleQuestion('interest', 'ふだん、ワイヤレスイヤホンにどれくらい関心がありますか', state.a.interest,
-        (n) => { state.a.interest = n; }, '1：全くない', '7：とてもある'),
+      h('p', null, 'ふだん、次の商品にどれくらい関心がありますか。'),
+      productOrder.map((p) => scaleQuestion('interest-' + p, PRODUCTS[p].interestLabel, state.a.interest[p],
+        (n) => { state.a.interest[p] = n; }, '1：全くない', '7：とてもある')),
     ],
-    validate: () => (state.a.interest ? null : '選択してください。'),
+    validate: () => (productOrder.every((p) => state.a.interest[p]) ? null : 'すべての商品に答えてください。'),
   }),
 
   mbti: () => ({
@@ -318,35 +391,40 @@ const pages = {
   },
 };
 
-function scenePage(index) {
+function scenePage(productIndex, index) {
+  const pKey = productOrder[productIndex];
+  const product = PRODUCTS[pKey];
   const sceneKey = ORDERS[state.order][index];
-  const scene = SCENES[sceneKey];
-  const rows = rotate(COPIES, index);
-  if (index === 1) rows.splice(2, 0, CHECK_ROW);
-  state.a.rowOrder[sceneKey] = rows.map((r) => r.id);
-  const ratings = state.a.ratings[sceneKey] || (state.a.ratings[sceneKey] = {});
+  const rows = rotate(COPY_IDS, index).map((id) => ({ id, text: product.copies[id] }));
+  if (index === 1 && pKey === CHECK_PRODUCT) rows.splice(2, 0, CHECK_ROW);
+  state.a.rowOrder[pKey][sceneKey] = rows.map((r) => r.id);
+  const ratings = state.a.ratings[pKey][sceneKey] || (state.a.ratings[pKey][sceneKey] = {});
+  const multi = productOrder.length > 1;
+  const lead = index === 0
+    ? (multi && productIndex > 0 ? 'ここからは、2つめの商品です。' : '') + product.intro
+    : '買うつもりで来ていること、お金は十分にあること、商品（' + product.name + '）、コピーは同じです。次の場面について答えてください。';
   return {
     body: [
       h('div', { class: 'scene-head' },
         h('div', null,
-          h('div', { class: 'scene-no' }, '場面 ' + (index + 1) + ' / 4'),
-          h('div', { class: 'scene-title' }, scene.label))),
-      h('p', { class: 'lead' }, index === 0 ? INTRO : LEAD_NEXT),
+          h('div', { class: 'scene-no' }, (multi ? product.name + '　' : '') + '場面 ' + (index + 1) + ' / 4'),
+          h('div', { class: 'scene-title' }, SCENE_LABELS[sceneKey]))),
+      h('p', { class: 'lead' }, lead),
       index === 0
-        ? h('img', { class: 'product-img', src: IMG, alt: IMG_ALT })
-        : h('div', { class: 'product-row' }, h('img', { src: IMG, alt: IMG_ALT }), h('p', null, '商品は、さっきと同じこのイヤホンです')),
-      h('div', { class: 'situation' }, h('strong', null, '【今回の状況】'), scene.text),
-      h('p', null, h('b', null, 'このコピーが書かれていたら、このイヤホンを買いたいと思いますか。')),
+        ? h('img', { class: 'product-img', src: product.img, alt: product.imgAlt })
+        : h('div', { class: 'product-row' }, h('img', { src: product.img, alt: product.imgAlt }), h('p', null, '商品は、さっきと同じ' + product.noun + 'です')),
+      h('div', { class: 'situation' }, h('strong', null, '【今回の状況】'), product.scenes[sceneKey]),
+      h('p', null, h('b', null, 'このコピーが書かれていたら、' + product.noun + 'を買いたいと思いますか。')),
       rows.map((r) => h('fieldset', { class: 'q autoscroll' + (r.id === 'CHECK' ? ' check-q' : '') },
         h('legend', { class: 'ad' },
-          r.id === 'CHECK' ? null : h('img', { src: IMG, alt: '' }),
+          r.id === 'CHECK' ? null : h('img', { src: product.img, alt: '' }),
           h('span', null,
-            r.id === 'CHECK' ? null : h('span', { class: 'ad-tag' }, 'このイヤホンの広告コピー'),
+            r.id === 'CHECK' ? null : h('span', { class: 'ad-tag' }, product.noun + 'の広告コピー'),
             h('span', { class: 'ad-text' }, r.id === 'CHECK' ? r.text : '「' + r.text + '」'))),
-        scale('r-' + sceneKey + '-' + r.id, r.id === 'CHECK' ? r.text : r.text, ratings[r.id],
+        scale('r-' + pKey + '-' + sceneKey + '-' + r.id, r.text, ratings[r.id],
           (n) => { ratings[r.id] = n; }, '1：全く買いたくない', '7：とても買いたい'))),
     ],
-    nextLabel: index < 3 ? '次の場面へ →' : '次へ →',
+    nextLabel: index < 3 ? '次の場面へ →' : (multi && productIndex === 0 ? '次の商品へ →' : '次へ →'),
     validate: () => (rows.every((r) => ratings[r.id]) ? null : 'すべてのコピーに答えてください。'),
   };
 }
@@ -360,10 +438,18 @@ const stepLabel = document.getElementById('stepLabel');
 function render() {
   const list = steps();
   const key = list[state.step];
-  const page = key.startsWith('scene') ? scenePage(Number(key.slice(5))) : pages[key]();
+  let page;
+  let title;
+  if (key.startsWith('scene:')) {
+    const [, pi, si] = key.split(':').map(Number);
+    page = scenePage(pi, si);
+    title = (productOrder.length > 1 ? PRODUCTS[productOrder[pi]].name + ' ' : '') + '場面 ' + (si + 1);
+  } else {
+    page = pages[key]();
+    title = PAGE_TITLES[key];
+  }
   bar.style.width = Math.round((state.step / list.length) * 100) + '%';
-  stepLabel.textContent = page.hideProgress ? '' : (state.step + ' / ' + (list.length - 1) + '　' +
-    (key.startsWith('scene') ? '場面 ' + (Number(key.slice(5)) + 1) : PAGE_TITLES[key]));
+  stepLabel.textContent = page.hideProgress ? '' : (state.step + ' / ' + (list.length - 1) + '　' + title);
 
   const error = h('p', { class: 'error', role: 'alert' });
   const next = h('button', { type: 'button', class: 'btn btn-primary', onclick: () => {
@@ -415,9 +501,12 @@ function showEnd(message) {
 
 async function submit() {
   showLoading();
+  const checkScene = ORDERS[state.order][1];
   const answers = Object.assign({}, state.a, {
+    set: setKey,
+    products: productOrder,
     order: state.order,
-    check1: state.a.ratings[ORDERS[state.order][1]].CHECK,
+    check1: state.a.ratings[CHECK_PRODUCT] ? state.a.ratings[CHECK_PRODUCT][checkScene].CHECK : null,
     timings: state.timings,
     startedAt: state.startedAt,
     submittedAt: new Date().toISOString(),
@@ -449,25 +538,26 @@ function showLoading() {
   app.replaceChildren(h('div', { class: 'loading page' },
     h('div', { class: 'dots', 'aria-hidden': 'true' }, h('i'), h('i'), h('i'), h('i')),
     h('h2', null, 'あなたの反応を分析中…'),
-    h('p', { class: 'muted' }, '16個の回答から、性格と状況の割合を計算しています')));
+    h('p', { class: 'muted' }, nRatings() + '個の回答から、性格と状況の割合を計算しています')));
 }
 
 // ---------- result ----------
 
 /*
- * 16個の評価（4コピー×4場面）のばらつきを3つに分ける。
+ * 商品ごとに16個の評価（4コピー×4場面）のばらつきを3つに分け、商品をまたいで足し合わせる。
  *   性格: 自分のタイプ向けコピーを、他のコピーより一貫して高く評価した分（低い場合は0）
  *   好み: それ以外の、場面が変わっても変わらないコピーの好み
  *   状況: 場面によって評価が変わった分（場面全体の上下＋場面ごとの好みの入れ替わり）
  * 二元配置の平方和: SS_copy = 4Σ(コピー平均-全体平均)^2、SS_scene = 4Σ(場面平均-全体平均)^2、
  * SS_int = Σ(評価-コピー平均-場面平均+全体平均)^2。
  * タイプ向けコピーとその他3つの差 d の対比平方和は 3d^2（SS_copy の一部）。
+ * 商品どうしの平均の差（どちらの商品をより買いたいか）は割合に含めない。
  */
-function computeResult() {
+const mean = (xs) => xs.reduce((a, b) => a + b, 0) / xs.length;
+
+function decompose(pKey, myCopy) {
   const sceneKeys = ORDERS.A;
-  const ids = COPIES.map((c) => c.id);
-  const r = ids.map((id) => sceneKeys.map((s) => state.a.ratings[s][id]));
-  const mean = (xs) => xs.reduce((a, b) => a + b, 0) / xs.length;
+  const r = COPY_IDS.map((id) => sceneKeys.map((s) => state.a.ratings[pKey][s][id]));
   const m = mean(r.flat());
   const copyMeans = r.map(mean);
   const sceneMeans = sceneKeys.map((_, j) => mean(r.map((row) => row[j])));
@@ -475,27 +565,34 @@ function computeResult() {
   const ssScene = 4 * sceneMeans.reduce((a, x) => a + (x - m) ** 2, 0);
   let ssInt = 0;
   r.forEach((row, i) => row.forEach((x, j) => { ssInt += (x - copyMeans[i] - sceneMeans[j] + m) ** 2; }));
-
-  const code = state.a.type;
-  const myCopy = code && code !== 'unknown' ? code[1] + code[2] : null;
   let ssPerson = 0;
   if (myCopy) {
-    const k = ids.indexOf(myCopy);
-    const others = copyMeans.filter((_, i) => i !== k);
-    const d = copyMeans[k] - mean(others);
+    const k = COPY_IDS.indexOf(myCopy);
+    const d = copyMeans[k] - mean(copyMeans.filter((_, i) => i !== k));
     if (d > 0) ssPerson = 3 * d * d;
   }
-  const ssPref = Math.max(0, ssCopy - ssPerson);
-  const ssSitu = ssScene + ssInt;
-  const total = ssPerson + ssPref + ssSitu;
+  return { ssPerson, ssPref: Math.max(0, ssCopy - ssPerson), ssSitu: ssScene + ssInt, copyMeans, sceneMeans };
+}
 
+function computeResult() {
+  const code = state.a.type;
+  const myCopy = code && code !== 'unknown' ? code[1] + code[2] : null;
+  const per = {};
+  let ssPerson = 0; let ssPref = 0; let ssSitu = 0;
+  productOrder.forEach((p) => {
+    per[p] = decompose(p, myCopy);
+    ssPerson += per[p].ssPerson; ssPref += per[p].ssPref; ssSitu += per[p].ssSitu;
+  });
+  const total = ssPerson + ssPref + ssSitu;
   let person = 0; let pref = 0; let situ = 0;
   if (total > 1e-9) {
     person = Math.round((ssPerson / total) * 100);
     situ = Math.round((ssSitu / total) * 100);
     pref = 100 - person - situ;
   }
-  return { total, person, pref, situ, myCopy, copyMeans, sceneMeans, sceneKeys };
+  const sceneKeys = ORDERS.A;
+  const sceneMeans = sceneKeys.map((_, j) => mean(productOrder.map((p) => per[p].sceneMeans[j])));
+  return { total, person, pref, situ, myCopy, per, sceneMeans, sceneKeys };
 }
 
 function resultTitle(res) {
@@ -509,9 +606,10 @@ function resultTitle(res) {
 function resultComment(res) {
   if (res.total <= 1e-9) return 'すべてのコピー・場面に同じ点数を付けていたため、割合は計算できませんでした。';
   const top = Math.max(res.person, res.pref, res.situ);
-  if (top === res.person) return 'どの場面でも、あなたのタイプに向けて作ったコピーを一貫して高く評価していました。広告への反応が、性格の通りに出ています。';
-  if (top === res.situ) return '同じコピーでも、時間がない・疲れている・友達といる、といった場面によって買いたい気持ちが大きく動いていました。性格よりも、そのときの状況が購買を左右しています。';
-  return '場面が変わってもぶれない好みがありますが、それはあなたのタイプ向けのコピーではありませんでした。性格の型には当てはまらない、自分だけの好みで選んでいます。';
+  if (top === res.person) return '4場面を平均すると、あなたのタイプに向けて作ったコピーを、ほかのコピーより高く評価していました。';
+  if (top === res.situ) return '同じコピーでも、時間がない・疲れている・友達といる、といった場面によって、付けた点数が動いていました。';
+  if (!res.myCopy) return '場面が変わっても、コピーの好みがはっきりしていました。';
+  return '場面が変わっても、コピーの好みがはっきりしていました。その好みの多くは、想定したタイプの違いだけでは説明できないものでした。';
 }
 
 function countUp(el, target) {
@@ -531,7 +629,7 @@ function showResult() {
   stepLabel.textContent = '結果';
   const res = computeResult();
   const typeName = TYPES.find(([c]) => c === state.a.type);
-  const mine = res.myCopy ? COPIES.find((c) => c.id === res.myCopy) : null;
+  const multi = productOrder.length > 1;
 
   const pPerson = h('b', null, '0%');
   const pSitu = h('b', null, '0%');
@@ -544,28 +642,33 @@ function showResult() {
     'aria-label': '性格' + res.person + '%、自分の好み' + res.pref + '%、状況' + res.situ + '%' }, segs);
 
   const fills = [];
-  const copyBars = COPIES.map((c, i) => {
-    const fill = h('div', { class: 'fill' });
-    fill.dataset.w = Math.round((res.copyMeans[i] / 7) * 100);
-    fills.push(fill);
-    return h('div', { class: 'barrow' + (c.id === res.myCopy ? ' mine' : '') },
-      h('div', { class: 'lbl' }, h('span', null, (c.id === res.myCopy ? '★ ' : '') + '「' + c.text + '」'), h('span', null, res.copyMeans[i].toFixed(1))),
-      h('div', { class: 'track' }, fill));
-  });
+  const copyBlocks = productOrder.map((p) => h('div', { class: 'bars-block' },
+    multi ? h('h3', null, PRODUCTS[p].name) : null,
+    h('div', { class: 'bars' }, COPY_IDS.map((id, i) => {
+      const fill = h('div', { class: 'fill' });
+      fill.dataset.w = Math.round((res.per[p].copyMeans[i] / 7) * 100);
+      fills.push(fill);
+      return h('div', { class: 'barrow' + (id === res.myCopy ? ' mine' : '') },
+        h('div', { class: 'lbl' }, h('span', null, (id === res.myCopy ? '★ ' : '') + '「' + PRODUCTS[p].copies[id] + '」'),
+          h('span', null, res.per[p].copyMeans[i].toFixed(1))),
+        h('div', { class: 'track' }, fill));
+    }))));
 
   const sceneSorted = res.sceneKeys.map((s, j) => [s, res.sceneMeans[j]]).sort((a, b) => b[1] - a[1]);
   const hi = sceneSorted[0];
   const lo = sceneSorted[sceneSorted.length - 1];
 
-  const designs = COPIES.map((c) => {
-    const isMine = c.id === res.myCopy;
-    return h('div', { class: 'design' + (isMine ? ' mine' : ''), 'data-g': c.id },
+  const designs = COPY_IDS.map((id) => {
+    const isMine = id === res.myCopy;
+    return h('div', { class: 'design' + (isMine ? ' mine' : ''), 'data-g': id },
       h('div', { class: 'design-head' },
-        h('span', { class: 'design-tag' }, c.id),
-        h('span', { class: 'design-target' }, c.target + ' を想定'),
+        h('span', { class: 'design-tag' }, id),
+        h('span', { class: 'design-target' }, DESIGN[id].target + ' を想定'),
         isMine ? h('span', { class: 'ribbon' }, 'あなたのタイプ') : null),
-      h('div', { class: 'design-copy' }, '「' + c.text + '」'),
-      h('p', { class: 'small' }, c.why));
+      productOrder.map((p) => h('div', { class: 'design-copy' },
+        multi ? h('span', { class: 'design-product' }, PRODUCTS[p].name) : null,
+        '「' + PRODUCTS[p].copies[id] + '」')),
+      h('p', { class: 'small' }, DESIGN[id].why));
   });
 
   app.replaceChildren(
@@ -582,24 +685,24 @@ function showResult() {
         h('span', null, h('i', { class: 'seg-pref' }), '自分の好み ' + res.pref + '%'),
         h('span', null, h('i', { class: 'seg-situ' }), '状況しだい ' + res.situ + '%')),
       h('p', { class: 'comment' }, resultComment(res)),
-      !mine ? h('p', { class: 'muted small' }, 'タイプが分からなかったため、性格どおりかどうかは判定していません。') : null),
+      !res.myCopy ? h('p', { class: 'muted small' }, 'タイプが分からなかったため、性格どおりかどうかは判定していません。') : null),
 
     h('section', { class: 'card page' },
       h('h2', null, 'コピーごとの「買いたい」度'),
-      mine ? h('p', { class: 'muted small' }, '★が、あなたのタイプ（' + res.myCopy + '）に響くことを想定したコピーです。数字は4場面の平均（7点満点）。') : null,
-      h('div', { class: 'bars' }, copyBars),
+      res.myCopy ? h('p', { class: 'muted small' }, '★が、あなたのタイプ（' + res.myCopy + '）に響くことを想定したコピーです。数字は4場面の平均（7点満点）。') : null,
+      copyBlocks,
       res.total > 1e-9 ? h('div', { class: 'scene-stats' },
-        h('div', null, 'いちばん買いたくなった場面', h('b', null, SCENES[hi[0]].label)),
-        h('div', null, 'いちばん買いたくなくなった場面', h('b', null, SCENES[lo[0]].label))) : null),
+        h('div', null, 'いちばん買いたくなった場面', h('b', null, SCENE_LABELS[hi[0]])),
+        h('div', null, 'いちばん買いたくなくなった場面', h('b', null, SCENE_LABELS[lo[0]]))) : null),
 
     h('section', { class: 'card page' },
       h('h2', null, 'この調査で使ったコピーについて'),
-      h('p', null, '4つのコピーは、16Personalitiesの「感覚型(S)・直観型(N)」と「思考型(T)・感情型(F)」の組み合わせごとに、そのタイプの人に響くことを想定して作成しました。卒業論文では、この想定どおりに反応が分かれるのか、それとも場面の影響のほうが大きいのかを調べます。'),
+      h('p', null, (multi ? '各商品の' : '') + '4つのコピーは、16Personalitiesの「感覚型(S)・直観型(N)」と「思考型(T)・感情型(F)」の組み合わせごとに、そのタイプの人に響くことを想定して作成しました。卒業論文では、この想定どおりに反応が分かれるのか、それとも場面の影響のほうが大きいのかを調べます。'),
       h('div', { class: 'designs' }, designs)),
 
     h('section', { class: 'card page' },
       h('h3', null, 'この結果について'),
-      h('p', { class: 'muted small' }, 'この割合は、あなたが付けた16個の点数のばらつきを「タイプ向けコピーを一貫して高く評価した分（性格）」「タイプとは関係なく一貫した好み（自分の好み）」「場面によって変わった分（状況）」に分けたものです。1人分の回答から出したお楽しみの結果で、卒業論文では回答者全体の傾向を分析します。'),
+      h('p', { class: 'muted small' }, 'この割合は、あなたが付けた' + nRatings() + '個の点数のばらつきを、' + (multi ? '商品ごとに' : '') + '「タイプ向けコピーを一貫して高く評価した分（性格）」「タイプとは関係なく一貫した好み（自分の好み）」「場面によって変わった分（状況）」に分けたものです。1人分の回答から出したお楽しみの結果で、卒業論文では回答者全体の傾向を分析します。'),
       h('p', { class: 'muted small' }, '回答は1人1回でお願いします。全体の結果は、集計後に公開する予定です。')),
   );
   window.scrollTo(0, 0);

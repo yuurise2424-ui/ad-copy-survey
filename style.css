@@ -323,3 +323,14 @@ input[type="number"]:focus { outline: none; border-color: var(--blue); backgroun
   *, *::before, *::after { animation: none !important; transition: none !important; }
   .split div, .barrow .fill { transition: none !important; }
 }
+
+/* multiple products */
+.img-row { display: flex; justify-content: center; gap: 12px; }
+.img-row .hero-img { margin: 6px 0 0; aspect-ratio: 1; object-fit: cover; }
+.img-row .hero-img:not(:only-child) { width: 46%; max-width: 170px; }
+.img-row .hero-img:nth-child(2) { animation-delay: -1.6s; }
+.img-row .product-img { aspect-ratio: 1; object-fit: cover; }
+.img-row .product-img:not(:only-child) { width: 48%; margin: 8px 0; }
+.product-img { aspect-ratio: 1; object-fit: cover; }
+.bars-block + .bars-block { margin-top: 22px; }
+.design-product { display: inline-block; font-size: 12px; font-weight: 700; color: var(--muted); margin-right: 8px; }
