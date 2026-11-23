@@ -3,16 +3,24 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src https://ljsotmcpaqdlvmysvnsj.supabase.co; base-uri 'none'; form-action 'none'">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self'; connect-src https://ljsotmcpaqdlvmysvnsj.supabase.co; base-uri 'none'; form-action 'none'">
   <meta name="referrer" content="no-referrer">
   <meta name="robots" content="noindex">
-  <title>広告コピー診断アンケート</title>
+  <meta name="theme-color" content="#ffffff">
+  <title>広告コピー診断</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Zen+Maru+Gothic:wght@500;700;900&display=swap">
   <link rel="stylesheet" href="style.css">
   <script src="app.js" defer></script>
 </head>
 <body>
+  <div class="blobs" aria-hidden="true"><span></span><span></span><span></span></div>
   <header class="top">
-    <div class="brand">広告コピー診断</div>
+    <div class="top-inner">
+      <div class="logo"><span class="logo-mark">C</span>広告コピー診断</div>
+      <div class="step-label" id="stepLabel"></div>
+    </div>
     <div class="progress" aria-hidden="true"><div id="bar"></div></div>
   </header>
   <main id="app" tabindex="-1">

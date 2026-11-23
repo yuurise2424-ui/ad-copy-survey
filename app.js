@@ -2,9 +2,10 @@
 
 /*
  * 卒論アンケートサイト（ワイヤレスイヤホン1商品版、2026-11-24）
- * 内容は create_form.gs（2026-11-15版）に合わせている。
+ * 質問の文言・順序・確認の行は create_form.gs（2026-11-15版）に合わせている。
  * 違い: 場面順のA/Bは生まれ月ではなくランダムに割り当てる。最後に結果と答え合わせを出す。
  * 回答は Supabase の responses テーブルに送る（書き込み専用。ブラウザからは読めない）。
+ * 2026-11-24 見た目を白ベースの診断サイト風に変更（保存するデータの形は web-1 のまま）。
  */
 
 const SUPABASE_URL = 'https://ljsotmcpaqdlvmysvnsj.supabase.co';
@@ -15,6 +16,8 @@ const UNIVERSITY = '名城大学';
 const AUTHOR = '西垣優';
 const CONTACT = 'yuurise2424@gmail.com';
 const TEST_URL = 'https://www.16personalities.com/ja/%E6%80%A7%E6%A0%BC%E8%A8%BA%E6%96%AD%E3%83%86%E3%82%B9%E3%83%88';
+const IMG = 'earphone.svg';
+const IMG_ALT = 'ワイヤレスイヤホンと充電ケースのイラスト';
 
 const COPIES = [
   { id: 'ST', text: '連続30時間再生、重さ4.5g', target: 'S（感覚型）× T（思考型）',
@@ -29,10 +32,10 @@ const COPIES = [
 const CHECK_ROW = { id: 'CHECK', text: '確認のため、この行は「5」を選んでください' };
 
 const SCENES = {
-  base: { label: '時間に余裕があるとき', text: '一人で来ていて、時間には余裕があります。体調も普段通りです。' },
-  rush: { label: '時間がないとき', text: '一人で来ていて、この後予定があり、売り場にいられるのはあと5分です。体調は普段通りです。' },
-  friend: { label: '友達と一緒のとき', text: '友達と一緒に来ていて、時間には余裕があります。体調も普段通りです。' },
-  tired: { label: 'とても疲れているとき', text: '一人で来ていて、時間には余裕があります。仕事やバイト、授業の帰りで、とても疲れています。' },
+  base: { label: '時間に余裕があるとき', emoji: '☕', text: '一人で来ていて、時間には余裕があります。体調も普段通りです。' },
+  rush: { label: '時間がないとき', emoji: '⏰', text: '一人で来ていて、この後予定があり、売り場にいられるのはあと5分です。体調は普段通りです。' },
+  friend: { label: '友達と一緒のとき', emoji: '👫', text: '友達と一緒に来ていて、時間には余裕があります。体調も普段通りです。' },
+  tired: { label: 'とても疲れているとき', emoji: '😪', text: '一人で来ていて、時間には余裕があります。仕事やバイト、授業の帰りで、とても疲れています。' },
 };
 const ORDERS = { A: ['base', 'rush', 'friend', 'tired'], B: ['tired', 'friend', 'rush', 'base'] };
 
@@ -60,16 +63,20 @@ const PROFILE = [
     ['なし', '3万円未満', '3〜5万円未満', '5〜10万円未満', '10〜20万円未満', '20万円以上', '答えたくない']],
 ];
 const EXPERIENCE = [
-  ['known', '受けたことがあり、結果が分かる'],
-  ['retake', '結果が分からないので、今から受ける（約10分）'],
-  ['new', '受けたことがなく、今から受ける（約10分）'],
-  ['none', '受けない（回答を終了する）'],
+  ['known', '受けたことがあり、結果が分かる', '🙆'],
+  ['retake', '結果が分からないので、今から受ける（約10分）', '🔁'],
+  ['new', '受けたことがなく、今から受ける（約10分）', '✨'],
+  ['none', '受けない（回答を終了する）', '👋'],
 ];
 const BELIEF = [
   ['accurate', '自分の診断結果は当たっていると感じる'],
   ['reliable', '16Personalitiesの診断は信頼できると思う'],
   ['use', '診断結果を、自分の選択や判断の参考にすることがある'],
 ];
+const PAGE_TITLES = {
+  consent: 'スタート', experience: '受検経験', guide: '診断の案内', profile: 'あなたについて',
+  adIntro: '説明', interest: '関心', mbti: '診断結果', belief: 'さいご',
+};
 
 // ---------- state ----------
 
@@ -109,29 +116,60 @@ function h(tag, attrs, ...children) {
   return el;
 }
 
-function paragraphs(text) {
-  return text.split('\n').map((line) => h('p', null, line));
+const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+// 答えたら次の未回答の質問へスクロールし、全部答えたら「次へ」を光らせる
+function afterAnswer(fromEl) {
+  const q = fromEl.closest('.q');
+  if (q) q.classList.add('done');
+  const all = Array.from(app.querySelectorAll('.q'));
+  const nextQ = all.find((el) => !el.querySelector('input:checked'));
+  const btn = app.querySelector('.btn-primary');
+  if (nextQ) {
+    if (q && q.classList.contains('autoscroll')) {
+      setTimeout(() => nextQ.scrollIntoView({ behavior: reduceMotion ? 'auto' : 'smooth', block: 'center' }), 220);
+    }
+    if (btn) btn.classList.remove('ready');
+  } else if (btn) {
+    btn.classList.add('ready');
+  }
 }
 
-function choiceGroup(name, legend, options, value, onChange) {
-  return h('fieldset', null,
+function optionCards(name, legend, options, value, onChange) {
+  return h('fieldset', { class: 'q' },
     h('legend', null, legend),
-    h('div', { class: 'choices' },
-      options.map(([val, label]) => h('label', { class: 'choice' },
+    h('div', { class: 'options' },
+      options.map(([val, label, emo]) => h('label', { class: 'option' },
         h('input', { type: 'radio', name, value: val, checked: value === val,
-          onchange: () => onChange(val) }),
-        label))));
+          onchange: (e) => { onChange(val); afterAnswer(e.target); } }),
+        h('span', null, emo ? h('i', { class: 'emo' }, emo) : null, label)))));
 }
 
-function scaleRow(name, legend, value, onChange, lowLabel, highLabel, legendClass) {
-  return h('fieldset', null,
-    h('legend', { class: legendClass }, legend),
-    h('div', { class: 'scale' },
+function chips(name, legend, options, value, onChange) {
+  return h('fieldset', { class: 'q' },
+    h('legend', null, legend),
+    h('div', { class: 'chips' },
+      options.map(([val, label]) => h('label', { class: 'chip' },
+        h('input', { type: 'radio', name, value: val, checked: value === val,
+          onchange: (e) => { onChange(val); afterAnswer(e.target); } }),
+        h('span', null, label)))));
+}
+
+function scale(name, ariaLabel, value, onChange, lowLabel, highLabel) {
+  return [
+    h('div', { class: 'scale', role: 'radiogroup', 'aria-label': ariaLabel },
       [1, 2, 3, 4, 5, 6, 7].map((n) => h('label', null,
         h('input', { type: 'radio', name, value: String(n), checked: value === n,
-          'aria-label': legend + ' ' + n, onchange: () => onChange(n) }),
+          'aria-label': ariaLabel + ' ' + n, onchange: (e) => { onChange(n); afterAnswer(e.target); } }),
         h('span', null, String(n))))),
-    h('div', { class: 'scale-ends' }, h('span', null, '1：' + lowLabel), h('span', null, '7：' + highLabel)));
+    h('div', { class: 'scale-ends' }, h('span', null, lowLabel), h('span', null, highLabel)),
+  ];
+}
+
+function scaleQuestion(name, legend, value, onChange, lowLabel, highLabel) {
+  return h('fieldset', { class: 'q autoscroll' },
+    h('legend', null, legend),
+    scale(name, legend, value, onChange, lowLabel, highLabel));
 }
 
 function rotate(items, offset) {
@@ -142,24 +180,36 @@ function rotate(items, offset) {
 
 const pages = {
   consent: () => ({
+    hideProgress: true,
     body: [
-      h('h1', null, 'MBTI診断（16Personalities）と購買に関するアンケート'),
-      h('p', null, 'このアンケートは、' + UNIVERSITY + 'の卒業論文のための調査です。16Personalitiesの診断結果と、買い物や広告の感じ方について聞きます。対象は18歳以上の方です。'),
-      h('p', null, '最後まで答えると、あなたが広告を見て「性格どおりに」反応したのか、「状況に左右されて」反応したのかが分かる結果が表示されます。'),
-      h('p', null, '16Personalitiesは、一般に「MBTI診断」と呼ばれることの多い無料の性格診断です（建築家、仲介者などのタイプが出るものです）。正式なMBTIとは別のものです。'),
-      h('p', null, '所要時間は約5分です（16Personalitiesの診断を今から受ける場合は約15分）。回答は匿名で、氏名やメールアドレスは集めません。結果は統計的に処理し、卒業論文にのみ使用します。'),
-      h('p', null, '回答は任意で、途中でやめても不利益はありません。送信後は匿名のため、個別の削除ができません。'),
-      h('p', { class: 'muted' }, '問い合わせ先：' + AUTHOR + '（' + CONTACT + '）'),
+      h('div', { class: 'hero' },
+        h('span', { class: 'eyebrow' }, '卒論アンケート × 診断'),
+        h('h1', null, '広告を見て', h('br'), '「買いたい」と思うのは', h('br'),h('span', { class: 'grad' }, '性格のせい？ 状況のせい？')),
+        h('img', { class: 'hero-img', src: IMG, alt: '' }),
+        h('p', null, '4つの場面で、イヤホンの広告コピーに答えるだけ。最後に、あなたの反応が「性格どおり」なのか「状況しだい」なのかが分かります。'),
+        h('div', { class: 'preview-split' }, h('div', { class: 'p1' }, '性格 ??%'), h('div', { class: 'p2' }, '状況 ??%')),
+        h('div', { class: 'chips-row' },
+          h('span', { class: 'chip-info' }, '⏱ 約5分'),
+          h('span', { class: 'chip-info' }, '🔒 匿名・名前もメールも不要'),
+          h('span', { class: 'chip-info' }, '🎁 最後に結果と答え合わせ'))),
+      h('div', { class: 'card' },
+        h('h3', null, 'はじめる前に'),
+        h('p', { class: 'small' }, 'このアンケートは、' + UNIVERSITY + 'の卒業論文のための調査です。16Personalitiesの診断結果と、買い物や広告の感じ方について聞きます。対象は18歳以上の方です。'),
+        h('p', { class: 'small' }, '16Personalitiesは、一般に「MBTI診断」と呼ばれることの多い無料の性格診断です（建築家、仲介者などのタイプが出るものです）。正式なMBTIとは別のものです。'),
+        h('p', { class: 'small' }, '所要時間は約5分です（16Personalitiesの診断を今から受ける場合は約15分）。回答は匿名で、氏名やメールアドレスは集めません。結果は統計的に処理し、卒業論文にのみ使用します。'),
+        h('p', { class: 'small' }, '回答は任意で、途中でやめても不利益はありません。送信後は匿名のため、個別の削除ができません。'),
+        h('p', { class: 'small muted' }, '問い合わせ先：' + AUTHOR + '（' + CONTACT + '）')),
     ],
-    nextLabel: '同意して始める',
-    extraButton: h('button', { type: 'button', onclick: () => showEnd('同意いただけない場合は、このページを閉じてください。ご覧いただきありがとうございました。') }, '同意しない'),
+    nextLabel: '同意してスタート →',
+    extraAfter: h('button', { type: 'button', class: 'btn-link',
+      onclick: () => showEnd('同意いただけない場合は、このページを閉じてください。ご覧いただきありがとうございました。') }, '同意しない'),
     validate: () => { state.a.consent = true; return null; },
   }),
 
   experience: () => ({
     body: [
-      h('h2', null, '16Personalitiesの受検経験'),
-      choiceGroup('experience', '16Personalities（いわゆるMBTI診断）を受けたことがありますか。',
+      h('h2', null, 'まずは、16Personalities（MBTI診断）について'),
+      optionCards('experience', '16Personalities（いわゆるMBTI診断）を受けたことがありますか。',
         EXPERIENCE, state.a.experience, (v) => { state.a.experience = v; }),
     ],
     validate: () => {
@@ -174,90 +224,96 @@ const pages = {
 
   guide: () => ({
     body: [
-      h('h2', null, '受検の案内'),
+      h('h2', null, '診断を受けてから戻ってきてね'),
       h('p', null, '別のタブで次のページを開き、診断を受けてください。結果のページは開いたままにして、このページに戻ってください。'),
-      h('p', null, h('a', { href: TEST_URL, target: '_blank', rel: 'noopener noreferrer' }, '16Personalities 無料性格診断テスト（別タブで開きます）')),
+      h('a', { class: 'test-link', href: TEST_URL, target: '_blank', rel: 'noopener noreferrer' }, '16Personalities 無料性格診断テストを開く ↗'),
       h('p', { class: 'muted' }, 'このページは閉じずにそのままにしておいてください。'),
     ],
-    nextLabel: '診断を受けた',
+    nextLabel: '診断を受けた！',
     validate: () => null,
   }),
 
   profile: () => ({
     body: [
-      h('h2', null, 'あなたについて'),
+      h('h2', null, 'あなたについて教えてください'),
       PROFILE.map(([key, label, options]) =>
-        choiceGroup(key, label, options.map((o) => [o, o]), state.a[key], (v) => { state.a[key] = v; })),
+        chips(key, label, options.map((o) => [o, o]), state.a[key], (v) => { state.a[key] = v; })),
     ],
     validate: () => (PROFILE.every(([key]) => state.a[key]) ? null : 'すべての質問に答えてください。'),
   }),
 
   adIntro: () => ({
     body: [
+      h('span', { class: 'eyebrow' }, 'ここからが本番'),
       h('h2', null, 'これからの質問について'),
       h('p', null, 'これから、ワイヤレスイヤホンについてお聞きします。'),
       h('p', null, '4つの場面を想像していただき、場面ごとでの広告コピーについての印象をお答えください。どの場面でも、買うつもりで来ていて、お金は十分にあることを前提にお答えください。'),
-      h('p', null, '4つのコピーは、すべて同じ1つのイヤホン（下の画像）に付いているものです。'),
-      h('img', { class: 'product-img', src: 'earphone.svg', alt: 'ワイヤレスイヤホンと充電ケースのイラスト' }),
+      h('img', { class: 'product-img', src: IMG, alt: IMG_ALT }),
+      h('p', null, h('b', null, '4つのコピーは、すべてこの同じ1つのイヤホンに付いているものです。')),
       h('p', null, '各ページでは、まず【今回の状況】を読んでから、コピーへの回答を選んでください。'),
     ],
+    nextLabel: '1つめの場面へ →',
     validate: () => null,
   }),
 
   interest: () => ({
     body: [
-      h('h2', null, '商品への関心'),
-      scaleRow('interest', 'ふだん、ワイヤレスイヤホンにどれくらい関心がありますか', state.a.interest,
-        (n) => { state.a.interest = n; }, '全くない', 'とてもある'),
+      h('h2', null, 'おつかれさま！あと少しです'),
+      scaleQuestion('interest', 'ふだん、ワイヤレスイヤホンにどれくらい関心がありますか', state.a.interest,
+        (n) => { state.a.interest = n; }, '1：全くない', '7：とてもある'),
     ],
     validate: () => (state.a.interest ? null : '選択してください。'),
   }),
 
-  mbti: () => {
-    const typeSelect = h('select', { id: 'type', onchange: (e) => { state.a.type = e.target.value; } },
-      h('option', { value: '' }, '選択してください'),
-      TYPES.map(([code, name]) => h('option', { value: code, selected: state.a.type === code }, code + '（' + name + '）')),
-      h('option', { value: 'unknown', selected: state.a.type === 'unknown' }, '覚えていない'));
-    return {
-      body: [
-        h('h2', null, '16Personalitiesの結果'),
-        h('p', null, '診断の結果について教えてください。'),
-        h('fieldset', null, h('legend', null, h('label', { for: 'type' }, '診断タイプ')), typeSelect),
-        choiceGroup('identity', 'タイプ末尾の文字', [['A', '-A'], ['T', '-T'], ['unknown', '覚えていない']],
-          state.a.identity, (v) => { state.a.identity = v; }),
-        h('p', { class: 'muted' }, '次の5つは、結果ページを見られる人だけ、自分の側に表示された数字（50〜100）を入力してください。分からなければ空欄で構いません。'),
-        AXES.map(([key, label]) => h('fieldset', null,
-          h('legend', null, h('label', { for: 'axis-' + key }, label + 'の%')),
-          h('input', { id: 'axis-' + key, type: 'number', inputmode: 'numeric', min: '50', max: '100', step: '1',
-            value: state.a.axes[key] ?? '', oninput: (e) => {
-              const v = e.target.value === '' ? undefined : Number(e.target.value);
-              state.a.axes[key] = v;
-            } }))),
-        choiceGroup('lastTaken', '最後に受けた時期', ['今日', '3か月以内', '1年以内', '1年以上前', '覚えていない'].map((o) => [o, o]),
-          state.a.lastTaken, (v) => { state.a.lastTaken = v; }),
-      ],
-      validate: () => {
-        if (!state.a.type || !state.a.identity || !state.a.lastTaken) return '診断タイプ、末尾の文字、受けた時期を選んでください。';
-        for (const [key] of AXES) {
-          const v = state.a.axes[key];
-          if (v !== undefined && !(Number.isInteger(v) && v >= 50 && v <= 100)) return '%は50〜100の整数で入力してください（分からなければ空欄）。';
-        }
-        return null;
-      },
-    };
-  },
+  mbti: () => ({
+    body: [
+      h('h2', null, 'あなたの16Personalitiesの結果は？'),
+      h('fieldset', { class: 'q' },
+        h('legend', null, '診断タイプ'),
+        h('div', { class: 'type-grid' },
+          TYPES.map(([code, name]) => h('label', { class: 'type-tile', 'data-g': code[1] + code[2] },
+            h('input', { type: 'radio', name: 'type', value: code, checked: state.a.type === code,
+              onchange: (e) => { state.a.type = code; afterAnswer(e.target); } }),
+            h('span', null, h('b', null, code), h('small', null, name))))),
+        h('div', { class: 'chips unknown-chip' }, h('label', { class: 'chip' },
+          h('input', { type: 'radio', name: 'type', value: 'unknown', checked: state.a.type === 'unknown',
+            onchange: (e) => { state.a.type = 'unknown'; afterAnswer(e.target); } }),
+          h('span', null, '覚えていない')))),
+      chips('identity', 'タイプ末尾の文字', [['A', '-A'], ['T', '-T'], ['unknown', '覚えていない']],
+        state.a.identity, (v) => { state.a.identity = v; }),
+      h('fieldset', null,
+        h('legend', null, '5つの指標の%（分かる人だけ）'),
+        h('p', { class: 'muted small' }, '結果ページを見られる人だけ、自分の側に表示された数字（50〜100）を入力してください。分からなければ空欄で構いません。'),
+        h('div', { class: 'axes' },
+          AXES.map(([key, label]) => h('label', null, label,
+            h('input', { type: 'number', inputmode: 'numeric', min: '50', max: '100', step: '1', placeholder: '50〜100',
+              value: state.a.axes[key] ?? '', oninput: (e) => {
+                state.a.axes[key] = e.target.value === '' ? undefined : Number(e.target.value);
+              } }))))),
+      chips('lastTaken', '最後に受けた時期', ['今日', '3か月以内', '1年以内', '1年以上前', '覚えていない'].map((o) => [o, o]),
+        state.a.lastTaken, (v) => { state.a.lastTaken = v; }),
+    ],
+    validate: () => {
+      if (!state.a.type || !state.a.identity || !state.a.lastTaken) return '診断タイプ、末尾の文字、受けた時期を選んでください。';
+      for (const [key] of AXES) {
+        const v = state.a.axes[key];
+        if (v !== undefined && !(Number.isInteger(v) && v >= 50 && v <= 100)) return '%は50〜100の整数で入力してください（分からなければ空欄）。';
+      }
+      return null;
+    },
+  }),
 
   belief: () => {
     const rows = BELIEF.slice();
     rows.splice(2, 0, ['check2', '確認のため、この行は「3」を選んでください']);
     return {
       body: [
-        h('h2', null, '診断についての考え'),
+        h('h2', null, 'さいごの質問！'),
         h('p', null, '次の文はどれくらい当てはまりますか。'),
-        rows.map(([key, label]) => scaleRow('belief-' + key, label, state.a.belief[key],
-          (n) => { state.a.belief[key] = n; }, '全く当てはまらない', 'とても当てはまる')),
+        rows.map(([key, label]) => scaleQuestion('belief-' + key, label, state.a.belief[key],
+          (n) => { state.a.belief[key] = n; }, '1：全く当てはまらない', '7：とても当てはまる')),
       ],
-      nextLabel: '送信して結果を見る',
+      nextLabel: '送信して結果を見る 🎉',
       validate: () => (rows.every(([key]) => state.a.belief[key]) ? null : 'すべての行に答えてください。'),
     };
   },
@@ -272,15 +328,27 @@ function scenePage(index) {
   const ratings = state.a.ratings[sceneKey] || (state.a.ratings[sceneKey] = {});
   return {
     body: [
-      h('h2', null, 'ワイヤレスイヤホン（場面 ' + (index + 1) + ' / 4：' + scene.label + '）'),
-      h('p', null, index === 0 ? INTRO : LEAD_NEXT),
-      h('img', { class: 'product-img', src: 'earphone.svg', alt: 'ワイヤレスイヤホンと充電ケースのイラスト' }),
-      h('div', { class: 'caption' }, '4つのコピーは、すべてこの同じイヤホンのものです'),
+      h('div', { class: 'scene-head' },
+        h('div', { class: 'scene-emoji', 'aria-hidden': 'true' }, scene.emoji),
+        h('div', null,
+          h('div', { class: 'scene-no' }, 'ワイヤレスイヤホン　場面 ' + (index + 1) + ' / 4'),
+          h('div', { class: 'scene-title' }, scene.label))),
+      h('p', { class: 'lead' }, index === 0 ? INTRO : LEAD_NEXT),
+      index === 0
+        ? h('img', { class: 'product-img', src: IMG, alt: IMG_ALT })
+        : h('div', { class: 'product-row' }, h('img', { src: IMG, alt: IMG_ALT }), h('p', null, '商品は、さっきと同じこのイヤホンです')),
       h('div', { class: 'situation' }, h('strong', null, '【今回の状況】'), scene.text),
       h('p', null, h('b', null, 'このコピーが書かれていたら、このイヤホンを買いたいと思いますか。')),
-      rows.map((r) => scaleRow('r-' + sceneKey + '-' + r.id, r.id === 'CHECK' ? r.text : '「' + r.text + '」',
-        ratings[r.id], (n) => { ratings[r.id] = n; }, '全く買いたくない', 'とても買いたい', 'copy-legend')),
+      rows.map((r) => h('fieldset', { class: 'q autoscroll' + (r.id === 'CHECK' ? ' check-q' : '') },
+        h('legend', { class: 'ad' },
+          r.id === 'CHECK' ? null : h('img', { src: IMG, alt: '' }),
+          h('span', null,
+            r.id === 'CHECK' ? null : h('span', { class: 'ad-tag' }, 'このイヤホンの広告コピー'),
+            h('span', { class: 'ad-text' }, r.id === 'CHECK' ? r.text : '「' + r.text + '」'))),
+        scale('r-' + sceneKey + '-' + r.id, r.id === 'CHECK' ? r.text : r.text, ratings[r.id],
+          (n) => { ratings[r.id] = n; }, '1：全く買いたくない', '7：とても買いたい'))),
     ],
+    nextLabel: index < 3 ? '次の場面へ →' : '次へ →',
     validate: () => (rows.every((r) => ratings[r.id]) ? null : 'すべてのコピーに答えてください。'),
   };
 }
@@ -289,29 +357,45 @@ function scenePage(index) {
 
 const app = document.getElementById('app');
 const bar = document.getElementById('bar');
+const stepLabel = document.getElementById('stepLabel');
 
 function render() {
   const list = steps();
   const key = list[state.step];
   const page = key.startsWith('scene') ? scenePage(Number(key.slice(5))) : pages[key]();
   bar.style.width = Math.round((state.step / list.length) * 100) + '%';
+  stepLabel.textContent = page.hideProgress ? '' : (state.step + ' / ' + (list.length - 1) + '　' +
+    (key.startsWith('scene') ? '場面 ' + (Number(key.slice(5)) + 1) : PAGE_TITLES[key]));
 
   const error = h('p', { class: 'error', role: 'alert' });
-  const next = h('button', { type: 'button', class: 'primary', onclick: () => {
+  const next = h('button', { type: 'button', class: 'btn btn-primary', onclick: () => {
     const msg = page.validate();
     if (msg === 'stop') return;
-    if (msg) { error.textContent = msg; return; }
+    if (msg) {
+      error.textContent = '';
+      requestAnimationFrame(() => { error.textContent = msg; });
+      const firstEmpty = Array.from(app.querySelectorAll('.q')).find((el) => !el.querySelector('input:checked'));
+      if (firstEmpty) firstEmpty.scrollIntoView({ behavior: reduceMotion ? 'auto' : 'smooth', block: 'center' });
+      return;
+    }
     recordTiming(key);
     if (state.step === list.length - 1) { submit(); return; }
     state.step += 1;
     render();
-  } }, page.nextLabel || '次へ');
+  } }, page.nextLabel || '次へ →');
   const back = state.step > 0
-    ? h('button', { type: 'button', onclick: () => { recordTiming(key); state.step -= 1; render(); } }, '戻る')
+    ? h('button', { type: 'button', class: 'btn btn-ghost', onclick: () => { recordTiming(key); state.step -= 1; render(); } }, '←')
     : null;
 
-  app.replaceChildren(h('section', { class: 'card' }, page.body, error,
-    h('div', { class: 'nav' }, back, page.extraButton, next)));
+  const isHero = key === 'consent';
+  const content = isHero
+    ? h('div', { class: 'page' }, page.body, error, h('div', { class: 'nav' }, next), h('div', { class: 'share' }, page.extraAfter))
+    : h('section', { class: 'card page' }, page.body, error, h('div', { class: 'nav' }, back, next));
+  app.replaceChildren(content);
+  if (app.querySelectorAll('.q').length && !Array.from(app.querySelectorAll('.q')).some((el) => !el.querySelector('input:checked'))) {
+    next.classList.add('ready');
+  }
+  app.querySelectorAll('.q').forEach((el) => { if (el.querySelector('input:checked')) el.classList.add('done'); });
   window.scrollTo(0, 0);
   app.focus({ preventScroll: true });
 }
@@ -325,18 +409,14 @@ function recordTiming(key) {
 function showEnd(message) {
   state.submitted = true;
   bar.style.width = '100%';
-  app.replaceChildren(h('section', { class: 'card' }, h('h2', null, 'ありがとうございました'), h('p', null, message)));
+  stepLabel.textContent = '';
+  app.replaceChildren(h('section', { class: 'card page' }, h('h2', null, 'ありがとうございました'), h('p', null, message)));
 }
 
 // ---------- submit ----------
 
 async function submit() {
-  const btn = app.querySelector('button.primary');
-  const error = app.querySelector('.error');
-  btn.disabled = true;
-  btn.textContent = '送信中…';
-  error.textContent = '';
-
+  showLoading();
   const answers = Object.assign({}, state.a, {
     order: state.order,
     check1: state.a.ratings[ORDERS[state.order][1]].CHECK,
@@ -346,24 +426,32 @@ async function submit() {
     mobile: window.matchMedia('(pointer: coarse)').matches,
   });
 
+  const minWait = new Promise((r) => setTimeout(r, reduceMotion ? 0 : 1800));
   try {
     const res = await fetch(SUPABASE_URL + '/rest/v1/responses', {
       method: 'POST',
-      headers: {
-        'apikey': SUPABASE_KEY,
-        'Content-Type': 'application/json',
-        'Prefer': 'return=minimal',
-      },
+      headers: { 'apikey': SUPABASE_KEY, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
       body: JSON.stringify({ version: VERSION, answers }),
     });
     if (!res.ok) throw new Error('HTTP ' + res.status);
     state.submitted = true;
+    await minWait;
     showResult();
   } catch (e) {
-    btn.disabled = false;
-    btn.textContent = 'もう一度送信する';
-    error.textContent = '送信できませんでした。通信環境を確認して、もう一度押してください。';
+    render();
+    app.querySelector('.btn-primary').textContent = 'もう一度送信する';
+    app.querySelector('.error').textContent = '送信できませんでした。通信環境を確認して、もう一度押してください。';
   }
+}
+
+function showLoading() {
+  bar.style.width = '100%';
+  stepLabel.textContent = '';
+  window.scrollTo(0, 0);
+  app.replaceChildren(h('div', { class: 'loading page' },
+    h('div', { class: 'dots', 'aria-hidden': 'true' }, h('i'), h('i'), h('i'), h('i')),
+    h('h2', null, 'あなたの反応を分析中…'),
+    h('p', { class: 'muted' }, '16個の回答から、性格と状況の割合を計算しています')));
 }
 
 // ---------- result ----------
@@ -428,26 +516,70 @@ function resultComment(res) {
   return '場面が変わってもぶれない好みがありますが、それはあなたのタイプ向けのコピーではありませんでした。性格の型には当てはまらない、自分だけの好みで選んでいます。';
 }
 
+function countUp(el, target) {
+  if (reduceMotion) { el.textContent = target + '%'; return; }
+  const start = performance.now();
+  const dur = 1200;
+  const tick = (now) => {
+    const t = Math.min(1, (now - start) / dur);
+    el.textContent = Math.round(target * (1 - Math.pow(1 - t, 3))) + '%';
+    if (t < 1) requestAnimationFrame(tick);
+  };
+  requestAnimationFrame(tick);
+}
+
+function confetti() {
+  if (reduceMotion) return;
+  const colors = ['#4d6bfe', '#8b6cff', '#ff6b6b', '#ffc542', '#1fc8a0', '#ff8a5b'];
+  for (let i = 0; i < 70; i++) {
+    const p = h('i', { class: 'confetti', 'aria-hidden': 'true' });
+    p.style.left = Math.random() * 100 + 'vw';
+    p.style.background = colors[i % colors.length];
+    p.style.animationDuration = 2.2 + Math.random() * 1.8 + 's';
+    p.style.animationDelay = Math.random() * 0.6 + 's';
+    p.style.transform = 'rotate(' + Math.random() * 360 + 'deg)';
+    document.body.append(p);
+    setTimeout(() => p.remove(), 5000);
+  }
+}
+
+function shareButton() {
+  const url = location.origin + location.pathname;
+  const btn = h('button', { type: 'button', class: 'btn btn-primary', onclick: async () => {
+    const text = '広告コピー診断：あなたは性格派？状況派？（約5分の卒論アンケートです）';
+    try {
+      if (navigator.share) { await navigator.share({ title: '広告コピー診断', text, url }); return; }
+      await navigator.clipboard.writeText(url);
+      btn.textContent = 'URLをコピーしました！';
+    } catch (e) { /* キャンセル時は何もしない */ }
+  } }, '友達にもやってもらう 📣');
+  return btn;
+}
+
 function showResult() {
   bar.style.width = '100%';
+  stepLabel.textContent = '結果';
   const res = computeResult();
   const typeName = TYPES.find(([c]) => c === state.a.type);
   const mine = res.myCopy ? COPIES.find((c) => c.id === res.myCopy) : null;
 
-  const split = h('div', { class: 'split', role: 'img',
-    'aria-label': '性格' + res.person + '%、好み' + res.pref + '%、状況' + res.situ + '%' });
-  [['seg-person', res.person], ['seg-pref', res.pref], ['seg-situ', res.situ]].forEach(([cls, v]) => {
+  const pPerson = h('b', null, '0%');
+  const pSitu = h('b', null, '0%');
+  const segs = [['seg-person', res.person], ['seg-pref', res.pref], ['seg-situ', res.situ]].map(([cls, v]) => {
     const seg = h('div', { class: cls });
-    seg.style.width = v + '%';
-    split.append(seg);
+    seg.dataset.w = v;
+    return seg;
   });
+  const split = h('div', { class: 'split', role: 'img',
+    'aria-label': '性格' + res.person + '%、自分の好み' + res.pref + '%、状況' + res.situ + '%' }, segs);
 
-  const maxMean = 7;
+  const fills = [];
   const copyBars = COPIES.map((c, i) => {
     const fill = h('div', { class: 'fill' });
-    fill.style.width = Math.round((res.copyMeans[i] / maxMean) * 100) + '%';
+    fill.dataset.w = Math.round((res.copyMeans[i] / 7) * 100);
+    fills.push(fill);
     return h('div', { class: 'barrow' + (c.id === res.myCopy ? ' mine' : '') },
-      h('div', { class: 'lbl' }, (c.id === res.myCopy ? '★ ' : '') + '「' + c.text + '」 平均 ' + res.copyMeans[i].toFixed(1)),
+      h('div', { class: 'lbl' }, h('span', null, (c.id === res.myCopy ? '★ ' : '') + '「' + c.text + '」'), h('span', null, res.copyMeans[i].toFixed(1))),
       h('div', { class: 'track' }, fill));
   });
 
@@ -455,44 +587,73 @@ function showResult() {
   const hi = sceneSorted[0];
   const lo = sceneSorted[sceneSorted.length - 1];
 
+  const flips = COPIES.map((c) => {
+    const isMine = c.id === res.myCopy;
+    const card = h('button', { type: 'button', class: 'flip' + (isMine ? ' mine' : ''), 'data-g': c.id,
+      'aria-label': '「' + c.text + '」の答えを見る',
+      onclick: () => card.classList.toggle('flipped') },
+      h('div', { class: 'flip-inner' },
+        h('div', { class: 'flip-face flip-front' },
+          isMine ? h('span', { class: 'ribbon' }, 'あなた向け') : null,
+          h('span', { class: 'ad-text' }, '「' + c.text + '」'),
+          h('span', { class: 'tap' }, 'タップしてめくる ↻')),
+        h('div', { class: 'flip-face flip-back' },
+          isMine ? h('span', { class: 'ribbon' }, 'あなた向け') : null,
+          h('b', null, c.id),
+          h('span', { class: 'tgt' }, c.target + ' 向け'),
+          h('span', null, c.why))));
+    return card;
+  });
+
   app.replaceChildren(
-    h('section', { class: 'card' },
-      h('p', { class: 'muted' }, 'ご回答ありがとうございました。あなたの結果です'),
-      h('div', { class: 'result-type' }, resultTitle(res)),
-      typeName ? h('p', null, 'あなたのタイプ：' + typeName[0] + '（' + typeName[1] + '）') : null,
+    h('section', { class: 'card page result-hero' },
+      h('span', { class: 'eyebrow' }, 'あなたの結果'),
+      h('div', { class: 'result-type grad' }, resultTitle(res)),
+      typeName ? h('span', { class: 'type-badge' }, typeName[0] + '（' + typeName[1] + '）') : null,
       h('div', { class: 'big-pct' },
-        h('div', null, h('b', null, res.person + '%'), '性格'),
-        h('div', null, h('b', null, res.situ + '%'), '状況')),
+        h('div', { class: 'bp-person' }, pPerson, '性格'),
+        h('div', { class: 'bp-situ' }, pSitu, '状況')),
       split,
       h('div', { class: 'legend' },
         h('span', null, h('i', { class: 'seg-person' }), '性格どおり ' + res.person + '%'),
         h('span', null, h('i', { class: 'seg-pref' }), '自分の好み ' + res.pref + '%'),
         h('span', null, h('i', { class: 'seg-situ' }), '状況しだい ' + res.situ + '%')),
-      h('p', null, resultComment(res)),
-      !mine ? h('p', { class: 'muted' }, 'タイプが分からなかったため、性格どおりかどうかは判定していません。') : null),
+      h('p', { class: 'comment' }, resultComment(res)),
+      !mine ? h('p', { class: 'muted small' }, 'タイプが分からなかったため、性格どおりかどうかは判定していません。') : null),
 
-    h('section', { class: 'card' },
-      h('h2', null, 'コピーごとの「買いたい」平均'),
-      mine ? h('p', { class: 'muted' }, '★が、あなたのタイプ（' + res.myCopy + '）に刺さる想定で作ったコピーです。') : null,
+    h('section', { class: 'card page' },
+      h('h2', null, 'コピーごとの「買いたい」度'),
+      mine ? h('p', { class: 'muted small' }, '★が、あなたのタイプ（' + res.myCopy + '）に刺さる想定で作ったコピーです。数字は4場面の平均（7点満点）。') : null,
       h('div', { class: 'bars' }, copyBars),
-      res.total > 1e-9 ? h('p', { class: 'muted' },
-        'いちばん買いたくなった場面は「' + SCENES[hi[0]].label + '」（平均 ' + hi[1].toFixed(1) + '）、' +
-        'いちばん買いたくなくなった場面は「' + SCENES[lo[0]].label + '」（平均 ' + lo[1].toFixed(1) + '）でした。') : null),
+      res.total > 1e-9 ? h('div', { class: 'scene-stats' },
+        h('div', null, 'いちばん買いたくなった', h('b', null, SCENES[hi[0]].emoji + ' ' + SCENES[hi[0]].label)),
+        h('div', null, 'いちばん買いたくなくなった', h('b', null, SCENES[lo[0]].emoji + ' ' + SCENES[lo[0]].label))) : null),
 
-    h('section', { class: 'card' },
+    h('section', { class: 'card page' },
+      h('span', { class: 'eyebrow' }, 'ネタばらし'),
       h('h2', null, '答え合わせ：実はこう作っていました'),
-      h('p', null, '4つのコピーは、16Personalitiesの「感覚型(S)・直観型(N)」と「思考型(T)・感情型(F)」の組み合わせごとに、そのタイプの人に刺さるという想定で作りました。'),
-      COPIES.map((c) => h('div', { class: 'reveal' + (c.id === res.myCopy ? ' mine' : '') },
-        h('h3', null, h('span', { class: 'tag' }, c.id), '「' + c.text + '」'),
-        h('p', { class: 'muted' }, c.target + ' 向け' + (c.id === res.myCopy ? '（あなたのタイプ）' : '')),
-        h('p', null, c.why)))),
+      h('p', null, '4つのコピーは、16Personalitiesの「感覚型(S)・直観型(N)」と「思考型(T)・感情型(F)」の組み合わせごとに、そのタイプの人に刺さるという想定で作りました。カードをタップしてめくってみてください。'),
+      h('div', { class: 'flip-grid' }, flips)),
 
-    h('section', { class: 'card' },
+    h('section', { class: 'card page share' },
+      h('h3', null, '結果をスクショしてシェアしてね'),
+      h('p', { class: 'muted small' }, '友達の結果と比べると、もっと面白いかも。'),
+      shareButton()),
+
+    h('section', { class: 'card page' },
       h('h3', null, 'この結果について'),
-      h('p', { class: 'muted' }, 'この割合は、あなたが付けた16個の点数のばらつきを「タイプ向けコピーを一貫して高く評価した分（性格）」「タイプとは関係なく一貫した好み（自分の好み）」「場面によって変わった分（状況）」に分けたものです。1人分の回答から出したお楽しみの結果で、卒業論文では回答者全体の傾向を分析します。'),
-      h('p', { class: 'muted' }, '回答は1人1回でお願いします。全体の結果は、集計後に公開する予定です。')),
+      h('p', { class: 'muted small' }, 'この割合は、あなたが付けた16個の点数のばらつきを「タイプ向けコピーを一貫して高く評価した分（性格）」「タイプとは関係なく一貫した好み（自分の好み）」「場面によって変わった分（状況）」に分けたものです。1人分の回答から出したお楽しみの結果で、卒業論文では回答者全体の傾向を分析します。'),
+      h('p', { class: 'muted small' }, '回答は1人1回でお願いします。全体の結果は、集計後に公開する予定です。')),
   );
   window.scrollTo(0, 0);
+
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    segs.forEach((s) => { s.style.width = s.dataset.w + '%'; });
+    fills.forEach((f) => { f.style.width = f.dataset.w + '%'; });
+    countUp(pPerson, res.person);
+    countUp(pSitu, res.situ);
+  }));
+  if (res.total > 1e-9) confetti();
 }
 
 window.addEventListener('beforeunload', (e) => {

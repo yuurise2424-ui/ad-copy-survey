@@ -9,7 +9,6 @@
       <stop offset="1" stop-color="#d9dde3"/>
     </linearGradient>
   </defs>
-  <rect width="400" height="260" rx="24" fill="#eef1f5"/>
   <ellipse cx="200" cy="222" rx="150" ry="12" fill="#000" opacity="0.08"/>
   <!-- case -->
   <rect x="135" y="120" width="130" height="96" rx="40" fill="url(#caseG)" stroke="#c4c9d1" stroke-width="2"/>
