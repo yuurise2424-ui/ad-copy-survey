@@ -21,17 +21,6 @@ const AUTHOR = '西垣優';
 const CONTACT = 'yuurise2424@gmail.com';
 const TEST_URL = 'https://www.16personalities.com/ja/%E6%80%A7%E6%A0%BC%E8%A8%BA%E6%96%AD%E3%83%86%E3%82%B9%E3%83%88';
 
-// コピーの狙い（2商品で仕組みをそろえている）
-const DESIGN = {
-  ST: { target: 'S（感覚型）× T（思考型）',
-    why: '感覚型は目の前の具体的な事実を、思考型は数字で比べられる根拠を重く見る、という想定です。気持ちには触れず、数字で機能だけを伝えています。' },
-  SF: { target: 'S（感覚型）× F（感情型）',
-    why: '感覚型に合う身近な日常の場面と、感情型に合う落ち着いた気持ちを組み合わせています。' },
-  NT: { target: 'N（直観型）× T（思考型）',
-    why: '直観型は新しさや可能性に、思考型は理屈や根拠に反応する、という想定です。「常識を変える」で新しさを、「科学で」「技術で」で根拠を示し、数字はあえて入れていません。' },
-  NF: { target: 'N（直観型）× F（感情型）',
-    why: '直観型に合う想像の広がりと、感情型に合うわくわく感を組み合わせています。使う動作をきっかけに何かが始まる期待を伝えるコピーです。' },
-};
 const COPY_IDS = ['ST', 'SF', 'NT', 'NF'];
 const CHECK_ROW = { id: 'CHECK', text: '確認のため、この行は「5」を選んでください' };
 
@@ -85,6 +74,11 @@ const PRODUCTS = {
     },
   },
 };
+// 結果の表で、言葉の区切りで折り返すための位置（|）。文言は copies と同じにする
+const COPY_PHRASES = [
+  'ビタミンC |1000mg、|糖質ゼロ', '忙しい|合間に、|ほっと|ひと息', '水分補給の|常識を、|科学で|変える', 'キャップを|開けたら、|何かが|始まる',
+  '連続30時間|再生、|重さ4.5g', '移動時間が、|好きな|時間に|なる', '音の|常識を、|技術で|変える', '再生した|瞬間、|物語が|始まる',
+];
 // 確認の行（「5」）を入れる商品。2場面目に入れる
 const CHECK_PRODUCT = 'earphone';
 
@@ -231,6 +225,15 @@ function scaleQuestion(name, legend, value, onChange, lowLabel, highLabel) {
   return h('fieldset', { class: 'q autoscroll' },
     h('legend', null, legend),
     scale(name, legend, value, onChange, lowLabel, highLabel));
+}
+
+// 「|」の位置でだけ折り返せるようにする
+function phrases(text) {
+  return text.split('|').flatMap((part, i) => (i ? [h('wbr'), part] : [part]));
+}
+
+function copyPhrases(text) {
+  return phrases(COPY_PHRASES.find((t) => t.replace(/[|]/g, '') === text) || text);
 }
 
 function rotate(items, offset) {
@@ -667,18 +670,22 @@ function showResult() {
   const hi = sceneSorted[0];
   const lo = sceneSorted[sceneSorted.length - 1];
 
-  const designs = COPY_IDS.map((id) => {
-    const isMine = id === res.myCopy;
-    return h('div', { class: 'design' + (isMine ? ' mine' : ''), 'data-g': id },
-      h('div', { class: 'design-head' },
-        h('span', { class: 'design-tag' }, id),
-        h('span', { class: 'design-target' }, DESIGN[id].target + ' を想定'),
-        isMine ? h('span', { class: 'ribbon' }, 'あなたのタイプ') : null),
-      productOrder.map((p) => h('div', { class: 'design-copy' },
-        multi ? h('span', { class: 'design-product' }, PRODUCTS[p].name) : null,
-        '「' + PRODUCTS[p].copies[id] + '」')),
-      h('p', { class: 'small' }, DESIGN[id].why));
-  });
+  // S/N（行）×T/F（列）の表。コピーの作り方をそのまま見せる
+  const designTables = productOrder.map((p) => h('table', { class: 'matrix' },
+    h('caption', null, PRODUCTS[p].name),
+    h('thead', null, h('tr', null,
+      h('td', null),
+      h('th', { scope: 'col' }, h('b', null, 'T'), '根拠で選ぶ'),
+      h('th', { scope: 'col' }, h('b', null, 'F'), '気持ちで選ぶ'))),
+    h('tbody', null, [['S', '具体的な|こと'], ['N', '新しさ・|想像']].map(([sn, label]) => h('tr', null,
+      h('th', { scope: 'row' }, h('b', null, sn), phrases(label)),
+      ['T', 'F'].map((tf) => {
+        const id = sn + tf;
+        const isMine = id === res.myCopy;
+        return h('td', { class: isMine ? 'mine' : null },
+          copyPhrases(PRODUCTS[p].copies[id]),
+          isMine ? h('span', { class: 'mine-label' }, 'あなた（' + id + '）') : null);
+      }))))));
 
   app.replaceChildren(
     h('section', { class: 'card page result-hero' },
@@ -705,9 +712,10 @@ function showResult() {
         h('div', null, 'いちばん買いたくなくなった場面', h('b', null, SCENE_LABELS[lo[0]]))) : null),
 
     h('section', { class: 'card page' },
-      h('h2', null, 'この調査で使ったコピーについて'),
-      h('p', null, (multi ? '各商品の' : '') + '4つのコピーは、16Personalitiesの「感覚型(S)・直観型(N)」と「思考型(T)・感情型(F)」の組み合わせごとに、そのタイプの人に響くことを想定して作成しました。卒業論文では、この想定どおりに反応が分かれるのか、それとも場面の影響のほうが大きいのかを調べます。'),
-      h('div', { class: 'designs' }, designs)),
+      h('h2', null, phrases('この調査で使った|コピーについて')),
+      h('p', null, '4つのコピーは、16Personalitiesの2つの軸を組み合わせて作りました。'),
+      designTables,
+      h('p', { class: 'small' }, 'Sは具体的な事実や身近な場面、Nは新しさや想像。Tは数字や技術などの根拠、Fは気持ちに訴える言葉にしています。それぞれのタイプの人に響くと想定していますが、本当にそうなるか、場面のほうが大きく効くのかを卒業論文で調べます。')),
 
     h('section', { class: 'card page' },
       h('h3', null, 'この結果について'),
