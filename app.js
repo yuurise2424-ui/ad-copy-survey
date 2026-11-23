@@ -9,12 +9,13 @@
  * 商品の組み合わせは URL で切り替える:
  *   （なし）      … ワイヤレスイヤホンのみ
  *   ?p=both       … ドリンクとワイヤレスイヤホン（商品の順はランダム）
- * 保存形式 web-2: ratings[商品][場面][コピーID]、interest[商品]。
+ * 保存形式 web-3: ratings[商品][場面][コピーID]、interest[商品]。形は web-2 と同じで、聞き方が違う
+ *   （web-2「買いたいと思うか」→ web-3「買いたい気持ちがどれくらい高まるか」。2026-11-24変更）。
  */
 
 const SUPABASE_URL = 'https://ljsotmcpaqdlvmysvnsj.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_fN0wj547S7tuJyVvwKlcEg_3s1q4kyf';
-const VERSION = 'web-2';
+const VERSION = 'web-3';
 
 const UNIVERSITY = '名城大学';
 const AUTHOR = '西垣優';
@@ -39,7 +40,7 @@ const PRODUCTS = {
     img: 'drink.webp',
     imgAlt: '淡い黄色のペットボトル飲料の商品画像',
     interestLabel: '飲み物の新商品',
-    intro: '次の場面を想像してください。飲み物を1本買うつもりで、コンビニに入りました。お金は十分にあるので、値段は気にしなくて大丈夫です。飲み物の棚に、新作のドリンク（下の画像）が並んでいて、下のいずれかのコピーが書かれています。それぞれを見たとき、このドリンクを買いたいと思いますか。',
+    intro: '次の場面を想像してください。あなたはコンビニで、この新作ドリンク（下の画像）を1本買おうとしています。お金は十分にあるので、値段は気にしなくて大丈夫です。商品はこの1つだけで、違うのは書かれている広告コピーだけです。',
     copies: {
       ST: 'ビタミンC 1000mg、糖質ゼロ',
       SF: '忙しい合間に、ほっとひと息',
@@ -59,7 +60,7 @@ const PRODUCTS = {
     img: 'earphone.webp',
     imgAlt: 'マットブラックのワイヤレスイヤホンと充電ケースの商品画像',
     interestLabel: 'ワイヤレスイヤホン',
-    intro: '次の場面を想像してください。今使っているイヤホンが壊れ、新しいものを買うつもりで家電量販店に来ました。お金は十分にあるので、値段は気にしなくて大丈夫です。売り場に、新作のワイヤレスイヤホン（下の画像）が並んでいて、下のいずれかのコピーが書かれています。それぞれを見たとき、このイヤホンを買いたいと思いますか。',
+    intro: '次の場面を想像してください。今使っているイヤホンが壊れたので、あなたは家電量販店で、この新作ワイヤレスイヤホン（下の画像）を買おうとしています。お金は十分にあるので、値段は気にしなくて大丈夫です。商品はこの1つだけで、違うのは書かれている広告コピーだけです。',
     copies: {
       ST: '連続30時間再生、重さ4.5g',
       SF: '移動時間が、好きな時間になる',
@@ -258,8 +259,8 @@ const pages = {
         h('h1', null, '16Personalitiesと', h('br'), h('span', { class: 'grad' }, '購買に関するアンケート')),
         productImages('hero-img'),
         h('p', null, productOrder.length > 1
-          ? '卒業論文の調査にご協力ください。2つの商品について、それぞれ4つの場面を想像して、広告コピーへの印象に答えていただきます。'
-          : '卒業論文の調査にご協力ください。4つの場面を想像して、広告コピーへの印象に答えていただきます。'),
+          ? '卒業論文の調査にご協力ください。2つの商品について、それぞれ4つの場面を想像して、広告コピーで買いたい気持ちがどれくらい高まるかに答えていただきます。'
+          : '卒業論文の調査にご協力ください。4つの場面を想像して、広告コピーで買いたい気持ちがどれくらい高まるかに答えていただきます。'),
         h('p', null, '回答のお礼に、最後に、あなたの反応が「性格どおり」だったか「状況しだい」だったかの分析結果をお見せします。'),
         h('div', { class: 'chips-row' },
           h('span', { class: 'chip-info' }, '所要時間 約' + SET.minutes + '分'),
@@ -319,7 +320,7 @@ const pages = {
     body: [
       h('h2', null, 'これからの質問について'),
       h('p', null, 'これから、' + productNames() + 'についてお聞きします。'),
-      h('p', null, (productOrder.length > 1 ? '商品ごとに' : '') + '4つの場面を想像していただき、場面ごとでの広告コピーについての印象をお答えください。どの場面でも、買うつもりで来ていて、お金は十分にあることを前提にお答えください。'),
+      h('p', null, (productOrder.length > 1 ? '商品ごとに' : '') + '4つの場面を想像していただき、それぞれの広告コピーで、買いたい気持ちがどれくらい高まるかをお答えください。どの場面でも、その商品を買おうとしていて、お金は十分にあることを前提にお答えください。'),
       productImages('product-img'),
       h('p', null, h('b', null, productOrder.length > 1
         ? '商品ごとの4つのコピーは、すべてその同じ1つの商品に付いているものです。'
@@ -405,7 +406,7 @@ function scenePage(productIndex, index) {
   const multi = productOrder.length > 1;
   const lead = index === 0
     ? (multi && productIndex > 0 ? 'ここからは、2つめの商品です。' : '') + product.intro
-    : '買うつもりで来ていること、お金は十分にあること、商品（' + product.name + '）、コピーは同じです。次の場面について答えてください。';
+    : 'この商品を買おうとしていること、お金は十分にあること、商品（' + product.name + '）と広告コピーは同じです。次の場面について答えてください。';
   return {
     body: [
       h('div', { class: 'scene-head' },
@@ -417,7 +418,7 @@ function scenePage(productIndex, index) {
         ? h('img', { class: 'product-img', src: product.img, alt: product.imgAlt })
         : h('div', { class: 'product-row' }, h('img', { src: product.img, alt: product.imgAlt }), h('p', null, '商品は、さっきと同じ' + product.noun + 'です')),
       h('div', { class: 'situation' }, h('strong', null, '【今回の状況】'), product.scenes[sceneKey]),
-      h('p', null, h('b', null, 'このコピーが書かれていたら、' + product.noun + 'を買いたいと思いますか。')),
+      h('p', null, h('b', null, '次の広告コピーが書かれていたら、' + product.noun + 'を買いたい気持ちはどれくらい高まりますか。')),
       rows.map((r) => h('fieldset', { class: 'q autoscroll' + (r.id === 'CHECK' ? ' check-q' : '') },
         h('legend', { class: 'ad' },
           r.id === 'CHECK' ? null : h('img', { src: product.img, alt: '' }),
@@ -425,7 +426,7 @@ function scenePage(productIndex, index) {
             r.id === 'CHECK' ? null : h('span', { class: 'ad-tag' }, product.noun + 'の広告コピー'),
             h('span', { class: 'ad-text' }, r.id === 'CHECK' ? r.text : '「' + r.text + '」'))),
         scale('r-' + pKey + '-' + sceneKey + '-' + r.id, r.text, ratings[r.id],
-          (n) => { ratings[r.id] = n; }, '1：全く買いたくない', '7：とても買いたい'))),
+          (n) => { ratings[r.id] = n; }, '1：全く高まらない', '7：とても高まる'))),
     ],
     nextLabel: index < 3 ? '次の場面へ →' : (multi && productIndex === 0 ? '次の商品へ →' : '次へ →'),
     validate: () => (rows.every((r) => ratings[r.id]) ? null : 'すべてのコピーに答えてください。'),
@@ -617,7 +618,7 @@ function resultComment(res) {
   const top = Math.max(res.person, res.pref, res.situ);
   if (top === res.person) {
     const names = productOrder.filter((p) => res.per[p].msPerson > 0).map((p) => PRODUCTS[p].name).join('と');
-    return (productOrder.length > 1 ? names + 'では、' : '') + '4場面を平均すると、あなたのタイプに向けて作ったコピーを、ほかのコピーの平均より高く評価していました。';
+    return (productOrder.length > 1 ? names + 'では、' : '') + '4場面を平均すると、あなたのタイプに向けて作ったコピーに、ほかのコピーの平均より高い点数を付けていました。';
   }
   if (top === res.situ) return '同じコピーでも、時間がない・疲れている・友達といる、といった場面によって、付けた点数が動いていました。';
   if (!res.myCopy) return '場面が変わっても、コピーの好みがはっきりしていました。';
@@ -754,12 +755,12 @@ function showResult() {
       averageBox),
 
     h('section', { class: 'card page' },
-      h('h2', null, 'コピーごとの「買いたい」度'),
+      h('h2', null, 'コピーごとの「買いたい気持ち」の高まり'),
       res.myCopy ? h('p', { class: 'muted small' }, '★が、あなたのタイプ（' + res.myCopy + '）に響くことを想定したコピーです。数字は4場面の平均（7点満点）。') : null,
       copyBlocks,
       res.total > 1e-9 ? h('div', { class: 'scene-stats' },
-        h('div', null, 'いちばん買いたくなった場面', h('b', null, SCENE_LABELS[hi[0]])),
-        h('div', null, 'いちばん買いたくなくなった場面', h('b', null, SCENE_LABELS[lo[0]]))) : null),
+        h('div', null, 'いちばん高まった場面', h('b', null, SCENE_LABELS[hi[0]])),
+        h('div', null, 'いちばん高まらなかった場面', h('b', null, SCENE_LABELS[lo[0]]))) : null),
 
     h('section', { class: 'card page' },
       h('h2', null, phrases('この調査で使った|コピーについて')),
