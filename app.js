@@ -395,6 +395,22 @@ const pages = {
   },
 };
 
+const HIDDEN_MESSAGE = '広告コピーが表示されていません。広告ブロックを切るか、別のブラウザで開き直してください。コピーが見えない状態では、次へ進めません。';
+
+// コピーの文が本当に画面に出ているか（広告ブロックなどで消えていないか）
+function copiesVisible(expected) {
+  const els = Array.from(app.querySelectorAll('.copy-words'));
+  return els.length === expected && els.every((el) => {
+    const box = el.getBoundingClientRect();
+    if (!el.textContent.trim() || box.width < 40 || box.height < 10) return false;
+    for (let n = el; n && n !== app; n = n.parentElement) {
+      const st = getComputedStyle(n);
+      if (st.display === 'none' || st.visibility !== 'visible' || Number(st.opacity) === 0) return false;
+    }
+    return true;
+  });
+}
+
 function scenePage(productIndex, index) {
   const pKey = productOrder[productIndex];
   const product = PRODUCTS[pKey];
@@ -419,17 +435,21 @@ function scenePage(productIndex, index) {
         : h('div', { class: 'product-row' }, h('img', { src: product.img, alt: product.imgAlt }), h('p', null, '商品は、さっきと同じ' + product.noun + 'です')),
       h('div', { class: 'situation' }, h('strong', null, '【今回の状況】'), product.scenes[sceneKey]),
       h('p', null, h('b', null, '次の広告コピーが書かれていたら、' + product.noun + 'を買いたい気持ちはどれくらい高まりますか。')),
-      rows.map((r) => h('fieldset', { class: 'q autoscroll' + (r.id === 'CHECK' ? ' check-q' : '') },
-        h('legend', { class: 'ad' },
+      // 広告ブロックに消されないよう、ad を含む名前や legend の装飾は使わない
+      rows.map((r) => h('fieldset', { class: 'q autoscroll' + (r.id === 'CHECK' ? ' check-q' : ''), 'aria-labelledby': 'words-' + r.id },
+        h('div', { class: 'copy-card' },
           r.id === 'CHECK' ? null : h('img', { src: product.img, alt: '' }),
-          h('span', null,
-            r.id === 'CHECK' ? null : h('span', { class: 'ad-tag' }, product.noun + 'の広告コピー'),
-            h('span', { class: 'ad-text' }, r.id === 'CHECK' ? r.text : '「' + r.text + '」'))),
+          h('div', { class: 'copy-body' },
+            r.id === 'CHECK' ? null : h('div', { class: 'copy-label' }, product.noun + 'の広告コピー'),
+            h('div', { class: 'copy-words', id: 'words-' + r.id }, r.id === 'CHECK' ? r.text : '「' + r.text + '」'))),
         scale('r-' + pKey + '-' + sceneKey + '-' + r.id, r.text, ratings[r.id],
           (n) => { ratings[r.id] = n; }, '1：全く高まらない', '7：とても高まる'))),
     ],
     nextLabel: index < 3 ? '次の場面へ →' : (multi && productIndex === 0 ? '次の商品へ →' : '次へ →'),
-    validate: () => (rows.every((r) => ratings[r.id]) ? null : 'すべてのコピーに答えてください。'),
+    validate: () => {
+      if (!copiesVisible(rows.length)) return HIDDEN_MESSAGE;
+      return rows.every((r) => ratings[r.id]) ? null : 'すべてのコピーに答えてください。';
+    },
   };
 }
 
@@ -477,7 +497,7 @@ function render() {
 
   const isHero = key === 'consent';
   const content = isHero
-    ? h('div', { class: 'page' }, page.body, error, h('div', { class: 'nav' }, next), h('div', { class: 'share' }, page.extraAfter))
+    ? h('div', { class: 'page' }, page.body, error, h('div', { class: 'nav' }, next), h('div', { class: 'hero-foot' }, page.extraAfter))
     : h('section', { class: 'card page' }, page.body, error, h('div', { class: 'nav' }, back, next));
   app.replaceChildren(content);
   if (app.querySelectorAll('.q').length && !Array.from(app.querySelectorAll('.q')).some((el) => !el.querySelector('input:checked'))) {
@@ -486,6 +506,15 @@ function render() {
   app.querySelectorAll('.q').forEach((el) => { if (el.querySelector('input:checked')) el.classList.add('done'); });
   window.scrollTo(0, 0);
   app.focus({ preventScroll: true });
+  // 表示のアニメーションが終わったころに、コピーが見えているかを確かめる
+  if (key.startsWith('scene:')) {
+    setTimeout(() => {
+      const n = content.querySelectorAll('fieldset.q').length;
+      if (content.isConnected && !copiesVisible(n)) {
+        content.prepend(h('p', { class: 'error', role: 'alert' }, HIDDEN_MESSAGE));
+      }
+    }, 1200);
+  }
 }
 
 function recordTiming(key) {
@@ -747,7 +776,7 @@ function showResult() {
         h('span', null, h('i', { class: 'seg-person' }), '性格どおり ' + res.person + '%'),
         h('span', null, h('i', { class: 'seg-pref' }), '自分の好み ' + res.pref + '%'),
         h('span', null, h('i', { class: 'seg-situ' }), '状況しだい ' + res.situ + '%')),
-      h('p', { class: 'comment' }, resultComment(res)),
+      h('p', { class: 'result-note' }, resultComment(res)),
       !res.myCopy ? h('p', { class: 'muted small' }, 'タイプが分からなかったため、性格どおりかどうかは分析していません。') : null),
 
     h('section', { class: 'card page' },
