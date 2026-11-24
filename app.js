@@ -10,6 +10,7 @@
  *   （なし）      … ワイヤレスイヤホンのみ
  *   ?p=both       … ドリンクとワイヤレスイヤホン（商品の順はランダム）
  * 保存形式 web-3: ratings[商品][場面][コピーID]、interest[商品]。形は web-2 と同じで、聞き方が違う
+ *   2026-11-24 収入・自由に使えるお金・住まいの質問を削除（お金が効く設計ではないため）。
  *   （web-2「買いたいと思うか」→ web-3「買いたい気持ちがどれくらい高まるか」。2026-11-24変更）。
  */
 
@@ -102,11 +103,6 @@ const PROFILE = [
   ['age', '年齢', ['18〜19歳', '20〜22歳', '23〜25歳', '26〜29歳', '30〜39歳', '40歳以上']],
   ['gender', '性別', ['男性', '女性', 'その他', '回答しない']],
   ['status', '現在の立場', ['大学生・大学院生', '専門学校生など', '会社員・公務員', 'パート・アルバイト', 'その他']],
-  ['residence', '住まい', ['実家・家族と同居', '一人暮らし', '寮', 'その他']],
-  ['money', '1か月に自由に使えるお金（家賃、光熱費、通信費、学費などの固定費を除く）',
-    ['1万円未満', '1〜3万円未満', '3〜5万円未満', '5〜10万円未満', '10万円以上']],
-  ['income', '1か月の収入（バイト代や給与の手取り。仕送りやお小遣いは除く）',
-    ['なし', '3万円未満', '3〜5万円未満', '5〜10万円未満', '10〜20万円未満', '20万円以上', '答えたくない']],
 ];
 const EXPERIENCE = [
   ['known', '受けたことがあり、結果が分かる'],
@@ -406,7 +402,8 @@ function copiesVisible(expected) {
   return els.length === expected && els.every((el) => {
     const box = el.getBoundingClientRect();
     if (!el.textContent.trim() || box.width < 40 || box.height < 10) return false;
-    for (let n = el; n && n !== app; n = n.parentElement) {
+    // .page は出始めのアニメーションで一瞬 opacity が 0 になるので、その内側だけを見る
+    for (let n = el; n && n !== app && !n.classList.contains('page'); n = n.parentElement) {
       const st = getComputedStyle(n);
       if (st.display === 'none' || st.visibility !== 'visible' || Number(st.opacity) === 0) return false;
     }
