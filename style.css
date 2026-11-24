@@ -329,21 +329,11 @@ h2 { word-break: keep-all; overflow-wrap: anywhere; }
 .compare-row .split { margin: 4px 0 0; }
 
 /* 文章の右端をそろえる（言葉の途中で折り返してよい） */
-main p, .situation, .notes dd, .result-note { text-align: justify; text-justify: inter-character; word-break: break-all; line-break: strict; }
-.hero p { text-align-last: center; }
+main p, .situation, .result-note { text-align: justify; text-justify: inter-character; word-break: break-all; line-break: strict; }
+.hero p { text-align-last: left; }
 main .loading p { text-align: center; text-align-last: center; }
 
-/* 始める前に */
-.notes { margin: 12px 0 0; font-size: 14px; line-height: 1.75; }
-.notes dt { font-weight: 900; color: var(--blue); font-size: 13px; }
-.notes dd { margin: 0 0 12px; }
-.notes dd:last-child { margin-bottom: 0; }
-.notes dd p { margin: 0; }
-@media (min-width: 560px) {
-  .notes { display: grid; grid-template-columns: 148px 1fr; column-gap: 16px; }
-  .notes dt { line-height: 1.9; }
-}
-.hero-line { margin-bottom: 2px; }
+.contact { text-align: left; }
 .logo { white-space: nowrap; }
 @media (max-width: 480px) {
   .logo { font-size: 14px; }
