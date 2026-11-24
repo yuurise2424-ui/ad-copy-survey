@@ -121,7 +121,7 @@ const BELIEF = [
 ];
 const PAGE_TITLES = {
   consent: 'スタート', experience: '受検経験', guide: '診断の案内', profile: 'あなたについて',
-  adIntro: '説明', interest: '関心', mbti: '診断結果', belief: 'さいご',
+  adIntro: '説明', interest: '関心', mbti: '診断結果', belief: '最後',
 };
 
 // ---------- state ----------
@@ -258,21 +258,24 @@ const pages = {
         h('span', { class: 'eyebrow' }, 'ご協力のお願い'),
         h('h1', null, '16Personalitiesと', h('br'), h('span', { class: 'grad' }, '購買に関するアンケート')),
         productImages('hero-img'),
-        h('p', null, productOrder.length > 1
-          ? '卒業論文の調査にご協力ください。2つの商品について、それぞれ4つの場面を想像して、広告コピーで買いたい気持ちがどれくらい高まるかに答えていただきます。'
-          : '卒業論文の調査にご協力ください。4つの場面を想像して、広告コピーで買いたい気持ちがどれくらい高まるかに答えていただきます。'),
-        h('p', null, '回答のお礼に、最後に、あなたの回答の分析結果をお見せします。'),
+        h('p', { class: 'hero-line' }, '卒業論文の調査にご協力ください。'),
+        h('p', null, (productOrder.length > 1 ? '2つの商品について、それぞれ' : '') + '4つの場面を想像して、広告コピーで買いたい気持ちがどれくらい高まるかに答えていただきます。'),
+        h('p', null, '回答のお礼に、最後にあなたの回答の分析結果をお見せします。'),
         h('div', { class: 'chips-row' },
           h('span', { class: 'chip-info' }, '所要時間 約' + SET.minutes + '分'),
           h('span', { class: 'chip-info' }, '匿名・氏名やメール不要'),
           h('span', { class: 'chip-info' }, '回答後に分析結果を表示'))),
       h('div', { class: 'card' },
-        h('h3', null, 'はじめる前に'),
-        h('p', { class: 'small' }, 'このアンケートは、' + UNIVERSITY + 'の卒業論文のための調査です。16Personalitiesの診断結果と、買い物や広告の感じ方について聞きます。対象は18歳以上の方です。'),
-        h('p', { class: 'small' }, '16Personalitiesは、一般に「MBTI診断」と呼ばれることの多い無料の性格診断です（建築家、仲介者などのタイプが出るものです）。正式なMBTIとは別のものです。'),
-        h('p', { class: 'small' }, '所要時間は約' + SET.minutes + '分です（16Personalitiesの診断を今から受ける場合は約' + SET.minutesWithTest + '分）。回答は匿名で、氏名やメールアドレスは集めません。回答は統計的に処理し、卒業論文に使用します。また、全員の平均の割合と人数だけを、回答した方の結果ページに表示します（1人ずつの回答は表示しません）。'),
-        h('p', { class: 'small' }, '回答は任意で、途中でやめても不利益はありません。送信後は匿名のため、個別の削除ができません。'),
-        h('p', { class: 'small muted' }, '問い合わせ先：' + AUTHOR + '（' + CONTACT + '）')),
+        h('h3', null, '始める前に'),
+        h('dl', { class: 'notes' }, [
+          ['目的', [UNIVERSITY + 'の卒業論文のための調査です。', '16Personalitiesの診断結果と、買い物や広告の感じ方について聞きます。']],
+          ['対象', ['18歳以上の方です。']],
+          ['16Personalitiesとは', ['一般に「MBTI診断」と呼ばれることの多い、無料の性格診断です（建築家、仲介者などのタイプが出るものです）。', '正式なMBTIとは別のものです。']],
+          ['所要時間', ['約' + SET.minutes + '分です。', '16Personalitiesの診断を今から受ける場合は、約' + SET.minutesWithTest + '分です。']],
+          ['回答の扱い', ['回答は匿名で、氏名やメールアドレスは集めません。', '回答は統計的に処理し、卒業論文に使用します。', '全員の平均の割合と人数だけを、回答した方の結果ページに表示します（1人ずつの回答は表示しません）。']],
+          ['回答の自由', ['回答は任意で、途中でやめても不利益はありません。', '送信後は匿名のため、個別の削除ができません。']],
+          ['問い合わせ先', [AUTHOR + '（' + CONTACT + '）']],
+        ].map(([label, lines]) => [h('dt', null, label), h('dd', null, lines.map((t) => h('p', null, t)))]))),
     ],
     nextLabel: '同意してスタート →',
     extraAfter: h('button', { type: 'button', class: 'btn-link',
@@ -327,13 +330,13 @@ const pages = {
         : '4つのコピーは、すべてこの同じ1つの商品に付いているものです。')),
       h('p', null, '各ページでは、まず【今回の状況】を読んでから、コピーへの回答を選んでください。'),
     ],
-    nextLabel: '1つめの場面へ →',
+    nextLabel: '1つ目の場面へ →',
     validate: () => null,
   }),
 
   interest: () => ({
     body: [
-      h('h2', null, 'おつかれさま！あと少しです'),
+      h('h2', null, 'お疲れさま！あと少しです'),
       h('p', null, 'ふだん、次の商品にどれくらい関心がありますか。'),
       productOrder.map((p) => scaleQuestion('interest-' + p, PRODUCTS[p].interestLabel, state.a.interest[p],
         (n) => { state.a.interest[p] = n; }, '1：全くない', '7：とてもある')),
@@ -384,7 +387,7 @@ const pages = {
     rows.splice(2, 0, ['check2', '確認のため、この行は「3」を選んでください']);
     return {
       body: [
-        h('h2', null, 'さいごの質問！'),
+        h('h2', null, '最後の質問！'),
         h('p', null, '次の文はどれくらい当てはまりますか。'),
         rows.map(([key, label]) => scaleQuestion('belief-' + key, label, state.a.belief[key],
           (n) => { state.a.belief[key] = n; }, '1：全く当てはまらない', '7：とても当てはまる')),
@@ -421,7 +424,7 @@ function scenePage(productIndex, index) {
   const ratings = state.a.ratings[pKey][sceneKey] || (state.a.ratings[pKey][sceneKey] = {});
   const multi = productOrder.length > 1;
   const lead = index === 0
-    ? (multi && productIndex > 0 ? 'ここからは、2つめの商品です。' : '') + product.intro
+    ? (multi && productIndex > 0 ? 'ここからは、2つ目の商品です。' : '') + product.intro
     : 'この商品を買おうとしていること、お金は十分にあること、商品（' + product.name + '）と広告コピーは同じです。次の場面について答えてください。';
   return {
     body: [
