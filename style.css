@@ -330,7 +330,7 @@ h2 { word-break: keep-all; overflow-wrap: anywhere; }
 
 /* 文章の右端をそろえる（言葉の途中で折り返してよい） */
 main p, .situation, .result-note { text-align: justify; text-justify: inter-character; word-break: break-all; line-break: strict; }
-.hero p { text-align-last: left; }
+.hero p { text-align-last: center; }
 main .loading p { text-align: center; text-align-last: center; }
 
 .contact { text-align: left; }
