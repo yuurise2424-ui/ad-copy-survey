@@ -238,8 +238,6 @@ legend { font-weight: 900; margin-bottom: 10px; padding: 0; font-size: 16px; }
 .type-tile[data-g="SP"] input:checked + span { background: #f0c040; }
 .type-tile input:focus-visible + span { outline: 3px solid var(--blue); outline-offset: 2px; }
 .unknown-chip { margin-top: 10px; }
-.axes { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-.axes label { font-size: 13px; font-weight: 700; color: var(--muted); }
 input[type="number"] {
   width: 100%; font: inherit; font-weight: 700; color: var(--text); background: var(--soft);
   border: 2px solid transparent; border-radius: 12px; padding: 9px 12px; margin-top: 2px;

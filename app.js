@@ -95,10 +95,6 @@ const TYPES = [
   ['ISTJ', '管理者'], ['ISFJ', '擁護者'], ['ESTJ', '幹部'], ['ESFJ', '領事'],
   ['ISTP', '巨匠'], ['ISFP', '冒険家'], ['ESTP', '起業家'], ['ESFP', 'エンターテイナー'],
 ];
-const AXES = [
-  ['EI', '外向型・内向型'], ['SN', '感覚型・直観型'], ['TF', '思考型・感情型'],
-  ['JP', '計画型・探索型'], ['AT', '自己主張型・慎重型'],
-];
 const PROFILE = [
   ['age', '年齢', ['18〜19歳', '20〜22歳', '23〜25歳', '26〜29歳', '30〜39歳', '40歳以上']],
   ['gender', '性別', ['男性', '女性', 'その他', '回答しない']],
@@ -129,7 +125,7 @@ const productOrder = SET.products.length > 1 && Math.random() < 0.5
 
 const state = {
   order: Math.random() < 0.5 ? 'A' : 'B',
-  a: { ratings: {}, rowOrder: {}, interest: {}, belief: {}, axes: {} },
+  a: { ratings: {}, rowOrder: {}, interest: {}, belief: {} },
   step: 0,
   timings: {},
   stepStartedAt: Date.now(),
@@ -351,24 +347,11 @@ const pages = {
           h('span', null, '覚えていない')))),
       chips('identity', 'タイプ末尾の文字', [['A', '-A'], ['T', '-T'], ['unknown', '覚えていない']],
         state.a.identity, (v) => { state.a.identity = v; }),
-      h('fieldset', null,
-        h('legend', null, '5つの指標の%（分かる人だけ）'),
-        h('p', { class: 'muted small' }, '結果ページを見られる人だけ、自分の側に表示された数字（50〜100）を入力してください。分からなければ空欄で構いません。'),
-        h('div', { class: 'axes' },
-          AXES.map(([key, label]) => h('label', null, label,
-            h('input', { type: 'number', inputmode: 'numeric', min: '50', max: '100', step: '1', placeholder: '50〜100',
-              value: state.a.axes[key] ?? '', oninput: (e) => {
-                state.a.axes[key] = e.target.value === '' ? undefined : Number(e.target.value);
-              } }))))),
       chips('lastTaken', '最後に受けた時期', ['今日', '3か月以内', '1年以内', '1年以上前', '覚えていない'].map((o) => [o, o]),
         state.a.lastTaken, (v) => { state.a.lastTaken = v; }),
     ],
     validate: () => {
       if (!state.a.type || !state.a.identity || !state.a.lastTaken) return '診断タイプ、末尾の文字、受けた時期を選んでください。';
-      for (const [key] of AXES) {
-        const v = state.a.axes[key];
-        if (v !== undefined && !(Number.isInteger(v) && v >= 50 && v <= 100)) return '%は50〜100の整数で入力してください（分からなければ空欄）。';
-      }
       return null;
     },
   }),
