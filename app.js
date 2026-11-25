@@ -554,15 +554,14 @@ function showLoading() {
 // ---------- result ----------
 
 /*
- * 商品ごとに12個の評価（4コピー×3場面）のばらつきを3つに分け、商品をまたいで足し合わせる。
- *   性格: 自分のタイプ向けコピーを、他のコピーより一貫して高く評価した分（低い場合は0）
- *   好み: それ以外の、場面が変わっても変わらないコピーの好み
+ * 商品ごとに12個の評価（4コピー×3場面）のばらつきを3つに分け、商品をまたいで足し合わせる。（2026-11-25 式を変更）
+ *   性格: 自分のタイプの文字（S/N、T/F）に合うコピーを、合わないコピーより高く評価した分。2つの軸を別々に数える
+ *   好み: それ以外の、場面が変わっても変わらないコピーの差（誰からも好まれやすいコピーの影響も含む）
  *   状況: 場面によって評価が変わった分（場面全体の上下＋場面ごとの好みの入れ替わり）
- * 二元配置の平方和: SS_copy = 3Σ(コピー平均-全体平均)^2、SS_scene = 4Σ(場面平均-全体平均)^2、
- * SS_int = Σ(評価-コピー平均-場面平均+全体平均)^2。
- * タイプ向けコピーとその他3つの差 d の対比平方和は 0.75×3×d^2 = 2.25d^2（SS_copy の一部）。
- * 平方和のままだと自由度の多い「状況」が大きく出るため、それぞれ自由度で割ってから比べる（2026-11-24修正）。
- *   性格 1、好み 2（タイプ向けの差が0以下またはタイプ不明なら、コピー差すべてを好みとして 3）、状況 2+6=8。
+ * 場面の数を n=3 とすると、コピー差 SS_copy = nΣ(コピー平均-全体平均)^2（自由度3）。
+ * 各軸の差 L（合う2コピーの平均 - 合わない2コピーの平均）の平方和は nL^2。L が0以下の軸は0とする。
+ * 自由度で割って比べる: 性格 = Σ nL^2 / 2、好み =（SS_copy - Σ nL^2）/ 2（タイプ不明なら SS_copy / 3）、
+ * 状況 =（場面＋交互作用）/ (2+6=8)。同じ式が Supabase の analysis.person_shares と 集計/make_excel.py にもある。
  * 商品どうしの平均の差（どちらの商品をより買いたいか）は割合に含めない。
  */
 const mean = (xs) => xs.reduce((a, b) => a + b, 0) / xs.length;
@@ -579,15 +578,19 @@ function decompose(pKey, myCopy) {
   r.forEach((row, i) => row.forEach((x, j) => { ssInt += (x - copyMeans[i] - sceneMeans[j] + m) ** 2; }));
   let msPerson = 0;
   let msPref = ssCopy / 3;
+  const matched = [];
   if (myCopy) {
-    const k = COPY_IDS.indexOf(myCopy);
-    const d = copyMeans[k] - mean(copyMeans.filter((_, i) => i !== k));
-    if (d > 0) {
-      msPerson = 0.75 * sceneKeys.length * d * d;
-      msPref = Math.max(0, ssCopy - msPerson) / 2;
-    }
+    let ss = 0;
+    [0, 1].forEach((axis) => {
+      const fit = copyMeans.filter((_, i) => COPY_IDS[i][axis] === myCopy[axis]);
+      const other = copyMeans.filter((_, i) => COPY_IDS[i][axis] !== myCopy[axis]);
+      const L = mean(fit) - mean(other);
+      if (L > 1e-9) { ss += sceneKeys.length * L * L; matched.push(myCopy[axis]); }
+    });
+    msPerson = ss / 2;
+    msPref = Math.max(0, ssCopy - ss) / 2;
   }
-  return { msPerson, msPref, msSitu: (ssScene + ssInt) / (COPY_IDS.length * (sceneKeys.length - 1)), copyMeans, sceneMeans };
+  return { matched, msPerson, msPref, msSitu: (ssScene + ssInt) / (COPY_IDS.length * (sceneKeys.length - 1)), copyMeans, sceneMeans };
 }
 
 function computeResult() {
@@ -616,19 +619,20 @@ function resultTitle(res) {
   const top = Math.max(res.person, res.pref, res.situ);
   if (top === res.person) return '性格どおりの反応が、いちばん大きく出ました';
   if (top === res.situ) return '状況による変化が、いちばん大きく出ました';
-  return '自分の好みが、いちばん大きく出ました';
+  return 'タイプ以外の好みが、いちばん大きく出ました';
 }
 
 function resultComment(res) {
   if (res.total <= 1e-9) return 'すべてのコピー・場面に同じ点数を付けていたため、割合は計算できませんでした。';
   const top = Math.max(res.person, res.pref, res.situ);
   if (top === res.person) {
-    const names = productOrder.filter((p) => res.per[p].msPerson > 0).map((p) => PRODUCTS[p].name).join('と');
-    return (productOrder.length > 1 ? names + 'では、' : '') + '3場面を平均すると、あなたのタイプに向けて作ったコピーに、ほかのコピーの平均より高い点数を付けていました。';
+    const parts = productOrder.filter((p) => res.per[p].matched.length)
+      .map((p) => (productOrder.length > 1 ? PRODUCTS[p].name + 'では' : '') + res.per[p].matched.join('と'));
+    return '3場面を平均すると、あなたのタイプの文字（' + parts.join('、') + '）に合うコピーに、合わないコピーより高い点数を付けていました。';
   }
   if (top === res.situ) return '同じコピーでも、時間がない・疲れている、といった場面によって、付けた点数が動いていました。';
   if (!res.myCopy) return '場面が変わっても、コピーの好みがはっきりしていました。';
-  return '場面が変わっても、コピーの好みがはっきりしていました。その好みの多くは、想定したタイプの違いだけでは説明できないものでした。';
+  return '場面が変わっても、コピーの好みがはっきりしていました。その多くは、タイプの違いだけでは説明できないものでした（誰からも好まれやすいコピーの影響も含みます）。';
 }
 
 function countUp(el, target) {
@@ -702,7 +706,7 @@ function showResult() {
     return seg;
   });
   const split = h('div', { class: 'split', role: 'img',
-    'aria-label': '性格' + res.person + '%、自分の好み' + res.pref + '%、状況' + res.situ + '%' }, segs);
+    'aria-label': '性格' + res.person + '%、タイプ以外の好み' + res.pref + '%、状況' + res.situ + '%' }, segs);
 
   const fills = [];
   const copyBlocks = productOrder.map((p) => h('div', { class: 'bars-block' },
@@ -751,7 +755,7 @@ function showResult() {
       split,
       h('div', { class: 'legend' },
         h('span', null, h('i', { class: 'seg-person' }), '性格どおり ' + res.person + '%'),
-        h('span', null, h('i', { class: 'seg-pref' }), '自分の好み ' + res.pref + '%'),
+        h('span', null, h('i', { class: 'seg-pref' }), 'タイプ以外の好み ' + res.pref + '%'),
         h('span', null, h('i', { class: 'seg-situ' }), '状況しだい ' + res.situ + '%')),
       h('p', { class: 'result-note' }, resultComment(res)),
       !res.myCopy ? h('p', { class: 'muted small' }, 'タイプが分からなかったため、性格どおりかどうかは分析していません。') : null),
@@ -776,7 +780,7 @@ function showResult() {
 
     h('section', { class: 'card page' },
       h('h3', null, 'この結果について'),
-      h('p', { class: 'muted small' }, 'この割合は、あなたが付けた' + nRatings() + '個の点数のばらつきを、' + (multi ? '商品ごとに' : '') + '「タイプ向けコピーを一貫して高く評価した分（性格）」「タイプとは関係なく一貫した好み（自分の好み）」「場面によって変わった分（状況）」に分け、それぞれの質問数などの違いをそろえて比べたものです。性格を診断するものではなく、今回の回答を分析した結果です。1人分の回答なので、目安としてご覧ください。卒業論文では回答者全体の傾向を別に分析します。'),
+      h('p', { class: 'muted small' }, 'この割合は、あなたが付けた' + nRatings() + '個の点数のばらつきを、' + (multi ? '商品ごとに' : '') + '「タイプの文字（SかN、TかF）に合うコピーを一貫して高く評価した分（性格）」「それ以外の一貫した好み（タイプ以外の好み）」「場面によって変わった分（状況）」に分け、それぞれの質問数などの違いをそろえて比べたものです。性格を診断するものではなく、今回の回答を分析した結果です。1人分の回答なので、目安としてご覧ください。卒業論文では回答者全体の傾向を別に分析します。'),
       h('p', { class: 'muted small' }, '回答は1人1回でお願いします。全体の結果は、集計後に公開する予定です。')),
   );
   window.scrollTo(0, 0);
