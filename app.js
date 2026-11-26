@@ -118,6 +118,8 @@ const PAGE_TITLES = {
 // ---------- state ----------
 
 const setKey = new URLSearchParams(location.search).get('p') === 'both' ? 'both' : 'earphone';
+// ?src=x のリンク（X/Twitter募集用）では作成者名を表示せず、回答に channel: 'x' を記録する
+const CHANNEL = new URLSearchParams(location.search).get('src') === 'x' ? 'x' : 'direct';
 const SET = SETS[setKey];
 const productOrder = SET.products.length > 1 && Math.random() < 0.5
   ? SET.products.slice().reverse() : SET.products.slice();
@@ -261,7 +263,7 @@ const pages = {
         h('p', { class: 'small' }, '16Personalitiesは、一般に「MBTI診断」と呼ばれることの多い無料の性格診断です（建築家、仲介者などのタイプが出るものです）。正式なMBTIとは別のものです。'),
         h('p', { class: 'small' }, '所要時間は約' + SET.minutes + '分です（16Personalitiesの診断を今から受ける場合は約' + SET.minutesWithTest + '分）。回答は匿名で、氏名やメールアドレスは集めません。回答は統計的に処理し、卒業論文に使用します。また、全員の平均の割合と人数だけを、回答した方の結果ページに表示します（1人ずつの回答は表示しません）。'),
         h('p', { class: 'small' }, '回答は任意で、途中でやめても不利益はありません。送信後は匿名のため、個別の削除ができません。'),
-        h('p', { class: 'small muted contact' }, '問い合わせ先：' + AUTHOR + '（' + CONTACT + '）')),
+        h('p', { class: 'small muted contact' }, CHANNEL === 'x' ? '問い合わせ先：' + CONTACT : '問い合わせ先：' + AUTHOR + '（' + CONTACT + '）')),
     ],
     nextLabel: '同意してスタート →',
     extraAfter: h('button', { type: 'button', class: 'btn-link',
@@ -514,6 +516,7 @@ async function submit() {
   const checkScene = state.order[1];
   const answers = Object.assign({}, state.a, {
     set: setKey,
+    channel: CHANNEL,
     products: productOrder,
     order: state.order.join('-'),
     check1: state.a.ratings[CHECK_PRODUCT] ? state.a.ratings[CHECK_PRODUCT][checkScene].CHECK : null,
