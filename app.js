@@ -118,8 +118,9 @@ const PAGE_TITLES = {
 // ---------- state ----------
 
 const setKey = new URLSearchParams(location.search).get('p') === 'both' ? 'both' : 'earphone';
-// ?src=x のリンク（X/Twitter募集用）では作成者名を表示せず、回答に channel: 'x' を記録する
-const CHANNEL = new URLSearchParams(location.search).get('src') === 'x' ? 'x' : 'direct';
+// ?src=x（X募集用）では作成者名を表示しない。?src=x / ?src=ig は回答に channel として記録する（それ以外は 'direct'）
+const SRC_PARAM = new URLSearchParams(location.search).get('src');
+const CHANNEL = SRC_PARAM === 'x' || SRC_PARAM === 'ig' ? SRC_PARAM : 'direct';
 const SET = SETS[setKey];
 const productOrder = SET.products.length > 1 && Math.random() < 0.5
   ? SET.products.slice().reverse() : SET.products.slice();
